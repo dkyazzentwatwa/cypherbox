@@ -19,6 +19,7 @@
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+#include <BleKeyboard.h>
 
 
 // STATE MANAGEMENT
@@ -272,11 +273,35 @@ void cleanupBTScan() {
 
 // BT SERIAL COMMANDS //
 // variables
-BluetoothSerial SerialBT;
 BleKeyboard bleKeyboard("cookiekeyboard", "cypher", 100);
 bool bluetoothActive = true;
-String ssid = "";
-String password = "";
+String BTssid = "";
+String BTpassword = "";
+
+void initBTSerialDisplay() {
+  display.clearDisplay();
+  u8g2_for_adafruit_gfx.begin(display);
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
+  
+  const char* commands[] = {
+    "Available commands:",
+    "WIFI \"ssid for spaced named\"",
+    "PASS password",
+    "START_WIFI",
+    "STOP_WIFI",
+    "SCAN_WIFI",
+    "BT_SCAN",
+    "STOP_BT"
+  };
+  
+  for (int i = 0; i < 8; i++) {
+    u8g2_for_adafruit_gfx.setCursor(0, i * 8);
+    u8g2_for_adafruit_gfx.print(commands[i]);
+  }
+  
+  display.display();
+}
+
 void initBTSerial() {
   // Initialize Bluetooth
   if (!SerialBT.begin("cookiemangos")) {
@@ -295,7 +320,7 @@ void runBTSerial() {
 }
 void handleCommand(String command) {
   Serial.println("Command received: " + command);
-  SerialBT.println("Command received: " + command);d
+  SerialBT.println("Command received: " + command);
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setCursor(0, 0);
   u8g2_for_adafruit_gfx.print("Cmd: " + command);
@@ -306,29 +331,29 @@ void handleCommand(String command) {
     int secondQuote = command.indexOf('"', firstQuote + 1);
 
     if (firstQuote != -1 && secondQuote != -1) {
-      ssid = command.substring(firstQuote + 1, secondQuote);
-      SerialBT.println("SSID set to: " + ssid);
-      Serial.println("SSID set to: " + ssid);
+      BTssid = command.substring(firstQuote + 1, secondQuote);
+      SerialBT.println("SSID set to: " + BTssid);
+      Serial.println("SSID set to: " + BTssid);
       u8g2_for_adafruit_gfx.setCursor(0, 8);
-      u8g2_for_adafruit_gfx.print("SSID set: " + ssid);
+      u8g2_for_adafruit_gfx.print("SSID set: " + BTssid);
       display.display();
     } else {
       SerialBT.println("Invalid WIFI command format. Use: WIFI \"ssid for spaced named\"");
       Serial.println("Invalid WIFI command format. Use: WIFI \"ssid for spaced named\"");
     }
   } else if (command.startsWith("PASS ")) {
-    password = command.substring(5);
-    SerialBT.println("Password set to: " + password);
-    Serial.println("Password set to: " + password);
+    BTpassword = command.substring(5);
+    SerialBT.println("Password set to: " + BTpassword);
+    Serial.println("Password set to: " + BTpassword);
     u8g2_for_adafruit_gfx.setCursor(0, 8);
     u8g2_for_adafruit_gfx.print("Password set");
     display.display();
   } else if (command == "START_WIFI") {
-    startWiFi();
+    //startWiFi();
   } else if (command == "STOP_WIFI") {
-    stopWiFi();
+    //stopWiFi();
   } else if (command == "SCAN_WIFI") {
-    scanWiFiNetworks();
+    //scanWiFiNetworks();
   } else if (command == "BT_SCAN") {
     SerialBT.println("BT_SCAN command received, but not implemented yet.");
   } else if (command == "BT_HID") {
@@ -336,9 +361,9 @@ void handleCommand(String command) {
     Serial.println("BT_HID command selected....");
     u8g2_for_adafruit_gfx.setCursor(0, 8);
     u8g2_for_adafruit_gfx.print("BT HID Selected.");
-    blueHID();
+    //blueHID();
   } else if (command == "STOP_BT") {
-    stopBluetooth();
+    //stopBluetooth();
   } else if (command == "CREATE_AP") {
     SerialBT.println("CREATE_AP command received, but not implemented yet.");
   } else {
@@ -914,9 +939,16 @@ void executeSelectedMenuItem() {
     case BT_SERIAL_CMD:
       Serial.println("BT SCAN button pressed");
       currentState = STATE_BT_SERIAL;
+      initBTSerialDisplay();
+      delay(2000);
       initBTSerial();
-      delay(2000);  // Scan for networks
+      delay(2000); 
       runBTSerial();
+      while (currentState == STATE_BT_SERIAL) {
+        runBTSerial();  // Check for Bluetooth commands
+        // Add any other logic you need here
+        delay(1000);  // Small delay to prevent excessive CPU usage
+      }
       break;
   }
 }
@@ -1036,7 +1068,7 @@ void loop() {
         }      break;
     case STATE_BT_SCAN:
     if (isButtonPressed(HOME_BUTTON_PIN)) {
-        clearBTScan();
+        cleanupBTScan();
         delay(3000);
         currentState = STATE_MENU;
         drawMenu();
