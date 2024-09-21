@@ -35,6 +35,7 @@ enum AppState {
   STATE_BT_SCAN,
   STATE_BT_SERIAL,
   STATE_BT_HID,
+  STATE_IPHONE_SPAM,
 };
 // Global variable to keep track of the current state
 AppState currentState = STATE_MENU;
@@ -1014,6 +1015,13 @@ void executeSelectedMenuItem() {
       delay(2000);
       runBTHID();
       break;
+    case IPHONE_SPAM:
+      Serial.println("IPHONE SPAM button pressed");
+      currentState = STATE_IPHONE_SPAM;
+      initBTHid();
+      delay(2000);
+      runBTHID();
+      break;
   }
 }
 void displayTitleScreen()
@@ -1141,6 +1149,8 @@ void loop() {
       }      break;
     case STATE_BT_SERIAL:
     if (isButtonPressed(HOME_BUTTON_PIN)) {
+        cleanupBTScan();
+        delay(3000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500); // Debounce delay
@@ -1148,6 +1158,17 @@ void loop() {
       }      break;
     case STATE_BT_HID:
     if (isButtonPressed(HOME_BUTTON_PIN)) {
+        cleanupBTScan();
+        delay(3000);
+        currentState = STATE_MENU;
+        drawMenu();
+        delay(500); // Debounce delay
+        return;
+      }      break;
+    case STATE_IPHONE_SPAM:
+    if (isButtonPressed(HOME_BUTTON_PIN)) {
+        cleanupBTScan();
+        delay(3000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500); // Debounce delay
