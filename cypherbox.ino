@@ -1007,6 +1007,13 @@ void executeSelectedMenuItem() {
         delay(1000);  // Small delay to prevent excessive CPU usage
       }
       break;
+    case BT_HID:
+      Serial.println("BT HID button pressed");
+      currentState = STATE_BT_HID;
+      initBTHid();
+      delay(2000);
+      runBTHID();
+      break;
   }
 }
 void displayTitleScreen()
