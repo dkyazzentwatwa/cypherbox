@@ -431,9 +431,8 @@ void runBTHid() {
   display.println("Waiting 5 seconds to connect...");
   display.display();
   delay(5000);
-
 }
-
+// END BT HID //
 // *** WIFI MODULES ***
 
 // Network data structure
