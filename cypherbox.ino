@@ -371,10 +371,67 @@ void handleCommand(String command) {
     Serial.println("Unknown command: " + command);
   }
 }
-
-
 // END BT SERIAL COMMANDS //
 
+// BT HID START //
+
+void initBTHid() {
+  bleKeyboard.begin();
+
+}
+
+void runBTHid() {
+  if (bleKeyboard.isConnected()) {
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println("Starting Rick Roll Hack....!!!");
+    Serial.println("Starting Rick Roll Hack....!!!");
+    delay(1000);
+    display.display();
+    // Open browser home page
+    bleKeyboard.write(KEY_MEDIA_WWW_HOME);
+    delay(6000);
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("Opening Rick Roll Hack....");
+    Serial.println("Opening Rick Roll Hack....");
+    display.display();
+    // URL to open
+    const char* url = "https://youtu.be/oHg5SJYRHA0?si=bfXXjVeR5UyKoh4n";
+
+    // Type the URL with a small delay between each character
+    for (size_t i = 0; i < strlen(url); i++) {
+      bleKeyboard.write(url[i]);
+      delay(50);  // Adjust this delay if needed
+    }
+    delay(500);  // Small delay before pressing enter
+    bleKeyboard.press(KEY_RETURN);
+    bleKeyboard.releaseAll();
+    delay(10000);  // Adjust this delay according to Chrome's load time
+    display.setCursor(0, 12);
+    display.println("Hack complete....!");
+    Serial.println("Hack complete....!");
+    display.display();
+    delay(1000);
+    display.setCursor(0, 24);
+    display.println("BT HID Complete....");
+    Serial.println("BT HID Complete....");
+    delay(2000);
+    display.display();
+
+    delay(1000);
+  }
+
+  Serial.println("Waiting 5 seconds to connect...");
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("Waiting 5 seconds to connect...");
+  display.display();
+  delay(5000);
+
+}
 
 // *** WIFI MODULES ***
 
