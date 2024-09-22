@@ -38,6 +38,7 @@ enum AppState {
   STATE_BT_HID,
   STATE_IPHONE_SPAM,
   STATE_DEVIL_TWIN,
+  STATE_RFID,
 };
 // Global variable to keep track of the current state
 AppState currentState = STATE_MENU;
@@ -59,7 +60,7 @@ enum MenuItem
   IPHONE_SPAM,
   //BEACON_SWARM,
   DEVIL_TWIN,
-  RFID_READ,
+  RFID,
   RF_SCAN,
   PARTY_LIGHT,
   FILES,
@@ -1395,6 +1396,13 @@ void executeSelectedMenuItem() {
       delay(2000);
       runDevilTwin();
       break;      
+    case RFID:
+      Serial.println("RFID button pressed");
+      currentState = STATE_RFID;
+      initDevilTwin();
+      delay(2000);
+      runDevilTwin();
+      break;
   }
 }
 void displayTitleScreen()
@@ -1549,7 +1557,15 @@ void loop() {
       }      break;
     case STATE_DEVIL_TWIN:
     if (isButtonPressed(HOME_BUTTON_PIN)) {
-        //cleanupBTScan();
+        //wifi cleanup
+        delay(3000);
+        currentState = STATE_MENU;
+        drawMenu();
+        delay(500); // Debounce delay
+        return;
+      }      break;
+    case STATE_RFID:
+    if (isButtonPressed(HOME_BUTTON_PIN)) {
         delay(3000);
         currentState = STATE_MENU;
         drawMenu();
