@@ -25,6 +25,12 @@
 //RFID
 #include <MFRC522.h>
 #include <SPI.h>
+//GPS
+#include <TinyGPSPlus.h>
+#include <HardwareSerial.h>
+#include <time.h>
+#include <RTClib.h>
+
 
 // STATE MANAGEMENT
 enum AppState {
@@ -42,6 +48,7 @@ enum AppState {
   STATE_IPHONE_SPAM,
   STATE_DEVIL_TWIN,
   STATE_RFID,
+  STATE_WARDRIVER,
 };
 // Global variable to keep track of the current state
 AppState currentState = STATE_MENU;
@@ -63,12 +70,13 @@ enum MenuItem {
   //BEACON_SWARM,
   DEVIL_TWIN,
   RFID,
-  RF_SCAN,
+  WARDRIVER,
+  //RF_SCAN,
   PARTY_LIGHT,
   FILES,
   ESPEE_BOT,
   DEAUTH,
-  GAMES,
+  //GAMES,
   SETTINGS,
   HELP,
   NUM_MENU_ITEMS
@@ -118,13 +126,9 @@ enum RfidItem
 */
 //volatile bool stopSniffer = false; // Flag to stop the sniffer
 volatile bool snifferRunning = true;
-
 const int MAX_VISIBLE_MENU_ITEMS = 3;  // Maximum number of items visible on the screen at a time
 MenuItem selectedMenuItem = PACKET_MON;
 int firstVisibleMenuItem = 0;
-
-
-// *** PINS ***
 
 // ***FOR YELLOW/BLUE SSD1306 SCREEN***Adjust the constants and initialization as needed
 #define YELLOW_HEIGHT 16
@@ -137,7 +141,7 @@ U8G2_FOR_ADAFRUIT_GFX u8g2_for_adafruit_gfx;
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
+// *** PINS ***
 #define NEOPIXEL_PIN 26
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
 // LED
@@ -168,9 +172,7 @@ void drawMenu() {
   display.setCursor(5, 4);                                             // Adjust as needed
   display.setTextSize(1);
   display.println("Home");  // Replace with dynamic title if needed
-
-  const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "iPhone Spam", "Devil Twin", "RFID Read", "RF Scan", "Party Light", "Files", "Espee Bot", "Deauth", "Games", "Settings", "Help" };
-
+  const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "iPhone Spam", "Devil Twin", "RFID Read", "Wardriver", "Party Light", "Files", "Deauth","Settings", "Help" };
   // Display the menu items in the blue area
   display.setTextColor(SSD1306_WHITE);  // White text in blue area
   for (int i = 0; i < 2; i++) {         // Only show 2 menu items at a time
@@ -185,16 +187,13 @@ void drawMenu() {
     } else {
       display.setTextColor(SSD1306_WHITE);  // White text for other items
     }
-
     display.setCursor(x, y);
     display.setTextSize(1);
     display.println(menuLabels[menuIndex]);
   }
-
   display.display();
   updateNeoPixel();
 }
-
 
 // *** BLUETOOTH MODULES ***
 //  BT SCANNER    //
@@ -212,7 +211,6 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     delay(200);
   }
 };
-
 void initBTScan() {
   // Initialize BLE
   BLEDevice::init("");
@@ -226,8 +224,6 @@ void initBTScan() {
   u8g2_for_adafruit_gfx.setCursor(20, 40);                 // Centered vertically
   u8g2_for_adafruit_gfx.print("LOADING...");
   display.display();
-
-
   delay(2000);
 }
 void runBTScan() {
@@ -263,11 +259,8 @@ void cleanupBTScan() {
     delete pBLEScan;     // Deallocate BLEScan
     pBLEScan = nullptr;  // Avoid dangling pointer
   }
-
-  // Optionally, you can also deinitialize BLE
   BLEDevice::deinit();
 }
-
 // END BT SCANNER //
 
 // BT SERIAL COMMANDS //
@@ -276,12 +269,10 @@ BleKeyboard bleKeyboard("cookiekeyboard", "cypher", 100);
 bool bluetoothActive = true;
 String BTssid = "";
 String BTpassword = "";
-
 void initBTSerialDisplay() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.begin(display);
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
-
   const char *commands[] = {
     "Available commands:",
     "WIFI \"ssid for spaced named\"",
@@ -292,12 +283,10 @@ void initBTSerialDisplay() {
     "BT_SCAN",
     "STOP_BT"
   };
-
   for (int i = 0; i < 8; i++) {
     u8g2_for_adafruit_gfx.setCursor(0, i * 8);
     u8g2_for_adafruit_gfx.print(commands[i]);
   }
-
   display.display();
 }
 
@@ -1182,6 +1171,219 @@ void runDevilTwin() {
 
 // *** GPS MODULES ***
 
+// SETUP
+// RTC setup
+RTC_Millis rtc;
+// Pin definitions for GPS module
+static const int RXPin = 16, TXPin = 17;
+static const uint32_t GPSBaud = 9600;  // GPS module baud rate
+#define SD_CS_PIN 5       // Chip select pin for SD card
+#define MIN_SATELLITES 4  // Minimum number of satellites for a valid GPS fix
+#define PST_OFFSET -8     // PST is UTC-8
+// Objects for GPS, serial communication, display, and SD card
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(1);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+File csvFile;
+// Counters for WiFi scans and networks found
+int scanCount = 0;
+int networkCount = 0;
+// GPS FUNCTIONS
+void displayGPSData() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Lat: ");
+  display.println(gps.location.lat(), 6);
+  display.print("Lng: ");
+  display.println(gps.location.lng(), 6);
+  display.print("Alt: ");
+  display.println(gps.altitude.meters());
+  display.print("Sat: ");
+  display.println(gps.satellites.value());
+
+  // Get the current time from RTC and display it
+  DateTime now = rtc.now();
+  char buffer[30];
+  snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+  display.print("Time: ");
+  display.println(buffer);
+
+  // Display the number of networks found and scan count
+  display.print("Nets: ");
+  display.println(networkCount);
+  display.print("Scans: ");
+  display.println(scanCount);
+
+  display.display();
+}
+
+// Display a message while searching for GPS signal
+void displaySearching() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Searching for GPS...");
+  display.print("Satellites: ");
+  display.println(gps.satellites.value());
+  display.display();
+}
+
+// Display an error message on the OLED screen
+void displayError(const char* error) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(error);
+  display.display();
+}
+
+// Initialize a new CSV file for storing WiFi scan results
+bool initializeCSV() {
+  DateTime now = rtc.now();
+  char filename[32];
+  snprintf(filename, sizeof(filename), "/wigle_%04d%02d%02d_%02d%02d%02d.csv", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+  csvFile = SD.open(filename, FILE_WRITE);
+  if (csvFile) {
+    csvFile.println("BSSID,SSID,Capabilities,First timestamp seen,Channel,Frequency,RSSI,Latitude,Longitude,Altitude,Accuracy,RCOIs,MfgrId,Type");
+    csvFile.close();
+    return true;
+  }
+  return false;
+}
+
+// Scan for WiFi networks and store results in the CSV file
+void scanWiFiNetworks() {
+  networkCount = WiFi.scanNetworks(); // Scan for WiFi networks
+  scanCount++; // Increment scan count
+  csvFile = SD.open("/wigle.csv", FILE_APPEND);
+  if (csvFile) {
+    for (int i = 0; i < networkCount; ++i) {
+      writeNetworkData(i);
+    }
+    csvFile.close();
+  } else {
+    displayError("CSV Write Error");
+  }
+
+  // Print networks to serial monitor
+  Serial.print("Scan #");
+  Serial.println(scanCount);
+  Serial.print("Networks found: ");
+  Serial.println(networkCount);
+  for (int i = 0; i < networkCount; ++i) {
+    Serial.print("Network #");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(WiFi.SSID(i));
+    Serial.print(" (");
+    Serial.print(WiFi.RSSI(i));
+    Serial.println(" dBm)");
+  }
+}
+
+// Write network data to the CSV file
+void writeNetworkData(int networkIndex) {
+  String bssid = WiFi.BSSIDstr(networkIndex);
+  String ssid = WiFi.SSID(networkIndex);
+  String capabilities = WiFi.encryptionType(networkIndex) == WIFI_AUTH_OPEN ? "Open" : "Secured";
+  String timestamp = getLocalTimestamp();
+  int channel = WiFi.channel(networkIndex);
+  int frequency = 2400 + (channel - 1) * 5;  // Assuming 2.4GHz WiFi
+  int rssi = WiFi.RSSI(networkIndex);
+  String latitude = String(gps.location.lat(), 6);
+  String longitude = String(gps.location.lng(), 6);
+  String altitude = String(gps.altitude.meters());
+  String accuracy = String(gps.hdop.hdop());
+  String rcois = "";   // Placeholder if RCOIs is not available
+  String mfgrid = "";  // Placeholder if Manufacturer ID is not available
+  String type = "WiFi";
+
+  // Write network data to CSV file
+  csvFile.print("\"" + bssid + "\",");
+  csvFile.print("\"" + ssid + "\",");
+  csvFile.print("\"" + capabilities + "\",");
+  csvFile.print("\"" + timestamp + "\",");
+  csvFile.print(channel);
+  csvFile.print(",");
+  csvFile.print(frequency);
+  csvFile.print(",");
+  csvFile.print(rssi);
+  csvFile.print(",");
+  csvFile.print(latitude);
+  csvFile.print(",");
+  csvFile.print(longitude);
+  csvFile.print(",");
+  csvFile.print(altitude);
+  csvFile.print(",");
+  csvFile.print(accuracy);
+  csvFile.print(",");
+  csvFile.print("\"" + rcois + "\",");
+  csvFile.print("\"" + mfgrid + "\",");
+  csvFile.println("\"" + type + "\"");
+}
+// Get the current timestamp from the RTC
+String getLocalTimestamp() {
+  DateTime now = rtc.now();  // Use RTC time for timestamp
+  char buffer[30];
+  snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+  return String(buffer);
+}
+
+void initGPS() {
+  gpsSerial.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin); // Start GPS serial communication
+  delay(5000); // Allow time for the system to stabilize
+  Serial.print("GPS loaded.")
+  // Initialize OLED display
+  display.display();
+  display.clearDisplay();
+  delay(3000);
+  // Initialize SD card
+  Serial.println("Initializing SD card...");
+  /*
+  if (!SD.begin(SD_CS_PIN)) {
+      Serial.println("Initialization failed!");
+  } else {
+      Serial.println("Initialization done.");
+      break
+  }
+  */
+  //delay(4000);
+  // Initialize CSV file
+  if (!initializeCSV()) {
+    displayError("CSV Init Error");
+  } else {
+      Serial.println("CSV Initialization done.");
+  }
+  delay(3000);
+
+  rtc.begin(DateTime(F(__DATE__), F(__TIME__))); // Initialize RTC with compile time
+
+  Serial.println(F("GPS and WiFi Scanner"));
+}
+
+void runGPS() {
+  // Read GPS data
+  while (gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+  }
+  // Check if GPS data is valid
+  if (gps.location.isValid() && gps.hdop.isValid() && gps.date.isValid() && gps.time.isValid() && gps.satellites.value() >= MIN_SATELLITES) {
+    // Update RTC with GPS time
+    DateTime gpsTime(gps.date.year(), gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(), gps.time.second());
+    rtc.adjust(gpsTime);
+    // Display GPS data and scan for WiFi networks
+    displayGPSData();
+    scanWiFiNetworks();
+    displayGPSData();
+    delay(15000); // Wait 15 seconds before next scan
+  } else {
+    displaySearching();
+  }
+}
 // *** TOOLS MODULES ***
 
 // RFID START
@@ -1444,6 +1646,13 @@ void executeSelectedMenuItem() {
       delay(2000);
       runRFID();
       break;
+    case WARDRIVER:
+      Serial.println("RFID button pressed");
+      currentState = STATE_RFID;
+      initGPS();
+      delay(2000);
+      runGPS();
+      break;
   }
 }
 void displayTitleScreen() {
@@ -1612,6 +1821,15 @@ void loop() {
       }
       break;
     case STATE_RFID:
+      if (isButtonPressed(HOME_BUTTON_PIN)) {
+        delay(3000);
+        currentState = STATE_MENU;
+        drawMenu();
+        delay(500);  // Debounce delay
+        return;
+      }
+      break;
+    case STATE_WARDRIVER:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         delay(3000);
         currentState = STATE_MENU;
