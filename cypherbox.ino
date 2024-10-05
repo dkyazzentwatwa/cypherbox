@@ -18,6 +18,7 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 #include <BleKeyboard.h>
+#include <BLEServer.h>
 // WIFI
 #include <WiFi.h>
 #include <DNSServer.h>
@@ -30,7 +31,7 @@
 #include <HardwareSerial.h>
 #include <time.h>
 #include <RTClib.h>
-
+#include <SD.h>
 
 // STATE MANAGEMENT
 enum AppState {
@@ -73,10 +74,11 @@ enum MenuItem {
   WARDRIVER,
   //RF_SCAN,
   PARTY_LIGHT,
+  LIGHTOFF,
   FILES,
-  ESPEE_BOT,
-  DEAUTH,
-  //GAMES,
+  //ESPEE_BOT, // needs reworking
+  //DEAUTH,
+  //GAMES, // needs implementation
   SETTINGS,
   HELP,
   NUM_MENU_ITEMS
@@ -172,7 +174,7 @@ void drawMenu() {
   display.setCursor(5, 4);                                             // Adjust as needed
   display.setTextSize(1);
   display.println("Home");  // Replace with dynamic title if needed
-  const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "iPhone Spam", "Devil Twin", "RFID Read", "Wardriver", "Party Light", "Files", "Deauth","Settings", "Help" };
+  const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "iPhone Spam", "Devil Twin", "RFID Read", "Wardriver", "Party Light", "Light Off", "Files", "Settings", "Help" };
   // Display the menu items in the blue area
   display.setTextColor(SSD1306_WHITE);  // White text in blue area
   for (int i = 0; i < 2; i++) {         // Only show 2 menu items at a time
@@ -1175,15 +1177,14 @@ void runDevilTwin() {
 // RTC setup
 RTC_Millis rtc;
 // Pin definitions for GPS module
-static const int RXPin = 16, TXPin = 17;
+static const int RXPin = 31, TXPin = 30;
 static const uint32_t GPSBaud = 9600;  // GPS module baud rate
-#define SD_CS_PIN 5       // Chip select pin for SD card
-#define MIN_SATELLITES 4  // Minimum number of satellites for a valid GPS fix
-#define PST_OFFSET -8     // PST is UTC-8
+#define SD_CS_PIN 5                    // Chip select pin for SD card
+#define MIN_SATELLITES 4               // Minimum number of satellites for a valid GPS fix
+#define PST_OFFSET -8                  // PST is UTC-8
 // Objects for GPS, serial communication, display, and SD card
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 File csvFile;
 // Counters for WiFi scans and networks found
 int scanCount = 0;
@@ -1232,7 +1233,7 @@ void displaySearching() {
 }
 
 // Display an error message on the OLED screen
-void displayError(const char* error) {
+void displayError(const char *error) {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -1257,8 +1258,8 @@ bool initializeCSV() {
 
 // Scan for WiFi networks and store results in the CSV file
 void scanWiFiNetworks() {
-  networkCount = WiFi.scanNetworks(); // Scan for WiFi networks
-  scanCount++; // Increment scan count
+  networkCount = WiFi.scanNetworks();  // Scan for WiFi networks
+  scanCount++;                         // Increment scan count
   csvFile = SD.open("/wigle.csv", FILE_APPEND);
   if (csvFile) {
     for (int i = 0; i < networkCount; ++i) {
@@ -1334,9 +1335,9 @@ String getLocalTimestamp() {
 }
 
 void initGPS() {
-  gpsSerial.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin); // Start GPS serial communication
-  delay(5000); // Allow time for the system to stabilize
-  Serial.print("GPS loaded.")
+  gpsSerial.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin);  // Start GPS serial communication
+  delay(5000);                                         // Allow time for the system to stabilize
+  Serial.print("GPS loaded.");
   // Initialize OLED display
   display.display();
   display.clearDisplay();
@@ -1356,11 +1357,11 @@ void initGPS() {
   if (!initializeCSV()) {
     displayError("CSV Init Error");
   } else {
-      Serial.println("CSV Initialization done.");
+    Serial.println("CSV Initialization done.");
   }
   delay(3000);
 
-  rtc.begin(DateTime(F(__DATE__), F(__TIME__))); // Initialize RTC with compile time
+  rtc.begin(DateTime(F(__DATE__), F(__TIME__)));  // Initialize RTC with compile time
 
   Serial.println(F("GPS and WiFi Scanner"));
 }
@@ -1379,7 +1380,7 @@ void runGPS() {
     displayGPSData();
     scanWiFiNetworks();
     displayGPSData();
-    delay(15000); // Wait 15 seconds before next scan
+    delay(15000);  // Wait 15 seconds before next scan
   } else {
     displaySearching();
   }
@@ -1477,6 +1478,46 @@ void updateNeoPixel() {
   delay(200);                 // Keep the light on for 1000 milliseconds (1 second)
   strip.setPixelColor(0, 0);  // Turn off the pixel
   strip.show();               // Update the strip to show the change
+}
+
+void partyLight() {
+  // Color rotation: red, green, blue, yellow, purple, cyan
+  uint32_t colors[] = { strip.Color(255, 0, 0), strip.Color(0, 255, 0), strip.Color(0, 0, 255),
+                        strip.Color(255, 255, 0), strip.Color(128, 0, 128), strip.Color(0, 255, 255) };
+  int numColors = sizeof(colors) / sizeof(colors[0]);
+  for (int i = 0; i < numColors; i++) {
+    int brightness = 0;
+    int fadeSpeed = 5 + (i * 2);  // Change speed based on color
+    // Pulsate by increasing and decreasing brightness
+    for (int j = 0; j <= 255; j += fadeSpeed) {
+      brightness = j;
+      setPixelColor(colors[i], brightness);
+      delay(30);
+    }
+    for (int j = 255; j >= 0; j -= fadeSpeed) {
+      brightness = j;
+      setPixelColor(colors[i], brightness);
+      delay(30);
+    }
+  }
+}
+
+// Helper function to set brightness by adjusting RGB values
+void setPixelColor(uint32_t color, int brightness) {
+  uint8_t r = (color >> 16) & 0xFF;
+  uint8_t g = (color >> 8) & 0xFF;
+  uint8_t b = color & 0xFF;
+  strip.setPixelColor(0, strip.Color(
+                           (r * brightness) / 255,
+                           (g * brightness) / 255,
+                           (b * brightness) / 255));
+  strip.show();
+}
+
+
+void turnOffNeopixel() {
+  strip.setPixelColor(0, 0);  // Turn off each pixel by setting it to black (0)
+  strip.show();               // Update the NeoPixel strip
 }
 
 bool isButtonPressed(uint8_t pin) {
@@ -1640,18 +1681,28 @@ void executeSelectedMenuItem() {
       runDevilTwin();
       break;
     case RFID:
-      Serial.println("RFID button pressed");
       currentState = STATE_RFID;
+      Serial.println("RFID button pressed");
       initRFID();
       delay(2000);
       runRFID();
       break;
     case WARDRIVER:
-      Serial.println("RFID button pressed");
-      currentState = STATE_RFID;
+      Serial.println("WARDRIVER button pressed");
+      currentState = STATE_WARDRIVER;
       initGPS();
       delay(2000);
       runGPS();
+      break;
+    case PARTY_LIGHT:
+      Serial.println("PARTYLIGHT button pressed");
+      partyLight();
+      delay(2000);
+      break;
+    case LIGHTOFF:
+      Serial.println("LIGHTOFF button pressed");
+      turnOffNeopixel();
+      delay(2000);
       break;
   }
 }
@@ -1773,7 +1824,7 @@ void loop() {
     case STATE_BT_SCAN:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
@@ -1783,7 +1834,7 @@ void loop() {
     case STATE_BT_SERIAL:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
@@ -1793,7 +1844,7 @@ void loop() {
     case STATE_BT_HID:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
@@ -1803,7 +1854,7 @@ void loop() {
     case STATE_IPHONE_SPAM:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
@@ -1813,7 +1864,7 @@ void loop() {
     case STATE_DEVIL_TWIN:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         //wifi cleanup
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
@@ -1822,7 +1873,7 @@ void loop() {
       break;
     case STATE_RFID:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
@@ -1831,7 +1882,7 @@ void loop() {
       break;
     case STATE_WARDRIVER:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
-        delay(3000);
+        delay(1000);
         currentState = STATE_MENU;
         drawMenu();
         delay(500);  // Debounce delay
