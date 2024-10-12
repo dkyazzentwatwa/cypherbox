@@ -1,3 +1,4 @@
+
 #include "freertos/FreeRTOS.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
@@ -23,6 +24,14 @@
 #include <WiFi.h>
 #include <DNSServer.h>
 #include <WebServer.h>
+//Packet Sniffer
+#include <stdio.h>
+#include <string>
+#include <cstddef>
+#include <Preferences.h>
+#include "FS.h"
+#include "SD_MMC.h"
+#include "Buffer.h"
 // RFID
 #include <MFRC522.h>
 #include <SPI.h>
@@ -37,7 +46,7 @@
 enum AppState
 {
   STATE_MENU,
-  STATE_PACKET_MONITOR,
+  STATE_PACKET_MON,
   STATE_WIFI_SNIFFER,
   STATE_AP_SCAN,
   STATE_AP_JOIN,
@@ -87,23 +96,6 @@ enum MenuItem
 };
 
 /*
-enum MenuItem
-{
-  PACKET_MON,
-  WIFI_SNIFF,
-  WIFI,
-  BLUETOOTH,
-  DEVIL_TWIN,
-  CAPTIVE_PORT,
-  RFID,
-  RF,
-  PARTY_LIGHT,
-  FILES,
-  ESPEE_BOT,
-  SETTINGS,
-  HELP,
-  NUM_MENU_ITEMS
-};
 
 enum WifiItem
 {
@@ -155,6 +147,42 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ80
 #define DOWN_BUTTON_PIN 35
 #define SELECT_BUTTON_PIN 15
 #define HOME_BUTTON_PIN 2
+
+//PACKET MONITOR SETTINGS
+#define MAX_CH 14       // 1 - 14 channels (1-11 for US, 1-13 for EU and 1-14 for Japan)
+#define SNAP_LEN 2324   // max len of each recieved packet
+#define BUTTON_PIN 15
+#define USE_DISPLAY     // comment out if you don't want to use the OLED display
+#define FLIP_DISPLAY    // comment out if you don't like to flip it
+#define SDA_PIN 21
+#define SCL_PIN 22
+#define MAX_X 128
+#define MAX_Y 51
+#if CONFIG_FREERTOS_UNICORE
+#define RUNNING_CORE 0
+#else
+#define RUNNING_CORE 1
+#endif
+#ifdef USE_DISPLAY
+//#include "SH1106.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+// Include the font library if you're using custom fonts
+#include <Fonts/FreeMonoBold9pt7b.h> 
+#endif
+Buffer sdBuffer;
+using namespace std;
+Preferences preferences;
+bool useSD = false;
+bool buttonPressed = false;
+bool buttonEnabled = true;
+uint32_t lastDrawTime;
+uint32_t lastButtonTime;
+uint32_t tmpPacketCounter;
+uint32_t pkts[MAX_X];       // here the packets per second will be saved
+uint32_t deauths = 0;       // deauth frames per second
+unsigned int ch = 1;        // current 802.11 channel
+int rssiSum;
 
 // *** DISPLAY
 void initDisplay()
@@ -990,6 +1018,264 @@ void printOnDisplay(String message)
       display.display();
       */
 }
+// ***PACKET MONITOR START*** //
+
+/* ===== functions ===== */
+double getMultiplicator() {
+  uint32_t maxVal = 1;
+  for (int i = 0; i < MAX_X; i++) {
+    if (pkts[i] > maxVal) maxVal = pkts[i];
+  }
+  if (maxVal > MAX_Y) return (double)MAX_Y / (double)maxVal;
+  else return 1;
+}
+
+void setChannel(int newChannel) {
+  ch = newChannel;
+  if (ch > MAX_CH || ch < 1) ch = 1;
+
+  preferences.begin("packetmonitor32", false);
+  preferences.putUInt("channel", ch);
+  preferences.end();
+
+  esp_wifi_set_promiscuous(false);
+  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous_rx_cb(&wifi_promiscuous);
+  esp_wifi_set_promiscuous(true);
+}
+
+bool setupSD() {
+  if (!SD_MMC.begin()) {
+    Serial.println("Card Mount Failed");
+    return false;
+  }
+
+  uint8_t cardType = SD_MMC.cardType();
+
+  if (cardType == CARD_NONE) {
+    Serial.println("No SD_MMC card attached");
+    return false;
+  }
+
+  Serial.print("SD_MMC Card Type: ");
+  if (cardType == CARD_MMC) {
+    Serial.println("MMC");
+  } else if (cardType == CARD_SD) {
+    Serial.println("SDSC");
+  } else if (cardType == CARD_SDHC) {
+    Serial.println("SDHC");
+  } else {
+    Serial.println("UNKNOWN");
+  }
+
+  uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
+  Serial.printf("SD_MMC Card Size: %lluMB\n", cardSize);
+
+  return true;
+}
+
+void wifi_promiscuous(void* buf, wifi_promiscuous_pkt_type_t type) {
+  wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
+  wifi_pkt_rx_ctrl_t ctrl = (wifi_pkt_rx_ctrl_t)pkt->rx_ctrl;
+
+  if (type == WIFI_PKT_MGMT && (pkt->payload[0] == 0xA0 || pkt->payload[0] == 0xC0 )) deauths++;
+
+  if (type == WIFI_PKT_MISC) return;             // wrong packet type
+  if (ctrl.sig_len > SNAP_LEN) return;           // packet too long
+
+  uint32_t packetLength = ctrl.sig_len;
+  if (type == WIFI_PKT_MGMT) packetLength -= 4;  // fix for known bug in the IDF https://github.com/espressif/esp-idf/issues/886
+
+  //Serial.print(".");
+  tmpPacketCounter++;
+  rssiSum += ctrl.rssi;
+
+  if (useSD) sdBuffer.addPacket(pkt->payload, packetLength);
+}
+
+void draw() {
+#ifdef USE_DISPLAY
+  double multiplicator = getMultiplicator();
+  int len;
+  int rssi;
+
+  if (pkts[MAX_X - 1] > 0) rssi = rssiSum / (int)pkts[MAX_X - 1];
+  else rssi = rssiSum;
+
+  display.fillScreen(SSD1306_BLACK); // Clear the screen
+  display.setTextColor(SSD1306_WHITE); // Set text color to white
+
+  display.setCursor(0, 0); // Set cursor position for left-aligned text
+  display.print("CH:" + String(ch)+ " ");
+  display.setCursor(30, 0); // Set cursor position for right-aligned text
+  display.print("R:"+String(rssi));
+  display.setCursor(65, 0); // Set cursor position for right-aligned text
+  display.print("P:[" + String(tmpPacketCounter) + "] " + "D:" + String(deauths));
+  display.print(useSD ? "SD" : "");
+
+  display.setCursor(95, 0);  // Set cursor position for left-aligned text
+  //display.print("Pkts:");
+
+  display.drawLine(0, 63 - MAX_Y, MAX_X, 63 - MAX_Y, SSD1306_WHITE); // Add color to drawLine
+  for (int i = 0; i < MAX_X; i++) {
+    len = pkts[i] * multiplicator;
+    display.drawLine(i, 63, i, 63 - (len > MAX_Y ? MAX_Y : len), SSD1306_WHITE);
+    if (i < MAX_X - 1) pkts[i] = pkts[i + 1];
+  }
+  display.display();
+#endif
+}
+void coreTask( void * p ) {
+
+  uint32_t currentTime;
+
+  while (true) {
+
+    currentTime = millis();
+
+    /* bit of spaghetti code, have to clean this up later :D */
+
+    // check button
+    if (digitalRead(BUTTON_PIN) == LOW) {
+      if (buttonEnabled) {
+        if (!buttonPressed) {
+          buttonPressed = true;
+          lastButtonTime = currentTime;
+        } else if (currentTime - lastButtonTime >= 2000) {
+          if (useSD) {
+            useSD = false;
+            sdBuffer.close(&SD_MMC);
+            draw();
+          } else {
+            if (setupSD())
+              sdBuffer.open(&SD_MMC);
+            draw();
+          }
+          buttonPressed = false;
+          buttonEnabled = false;
+        }
+      }
+    } else {
+      if (buttonPressed) {
+        setChannel(ch + 1);
+        draw();
+      }
+      buttonPressed = false;
+      buttonEnabled = true;
+    }
+
+    // save buffer to SD
+    if (useSD)
+      sdBuffer.save(&SD_MMC);
+
+    // draw Display
+    if ( currentTime - lastDrawTime > 1000 ) {
+      lastDrawTime = currentTime;
+      // Serial.printf("\nFree RAM %u %u\n", heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT), heap_caps_get_minimum_free_size(MALLOC_CAP_32BIT));// for debug purposes
+
+      pkts[MAX_X - 1] = tmpPacketCounter;
+
+      draw();
+
+      Serial.println((String)pkts[MAX_X - 1]);
+
+      tmpPacketCounter = 0;
+      deauths = 0;
+      rssiSum = 0;
+    }
+
+    // Serial input
+    if (Serial.available()) {
+      ch = Serial.readString().toInt();
+      if (ch < 1 || ch > 14) ch = 1;
+      setChannel(ch);
+    }
+
+  }
+
+}
+
+void initPacketMon() {
+
+  // Settings
+  preferences.begin("packetmonitor32", false);
+  ch = preferences.getUInt("channel", 1);
+  preferences.end();
+
+  // System & WiFi
+  nvs_flash_init();
+  //tcpip_adapter_init(); // Add header file for this function: #include <esp_wifi.h>
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  //ESP_ERROR_CHECK(esp_wifi_set_country(WIFI_COUNTRY_EU));
+  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+  ESP_ERROR_CHECK(esp_wifi_start());
+
+  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+
+  // SD card
+  sdBuffer = Buffer();
+
+  if (setupSD())
+    sdBuffer.open(&SD_MMC);
+
+  // I/O
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  // display
+#ifdef USE_DISPLAY
+  //display.init();
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  { // Address 0x3C for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ;
+  }
+
+/*#ifdef FLIP_DISPLAY
+  display.flipScreenVertically();
+#endif
+*/
+
+  /* show start screen */
+  display.fillScreen(SSD1306_BLACK);
+  display.setTextColor(SSD1306_WHITE);
+  //display.setFont(FreeMonoBold9pt7b); // Assuming you are using the FreeMonoBold9pt7b font
+  display.setCursor(6, 6); 
+  display.print("PacketMonitor32");
+  //display.setFont(FreeMonoBold9pt7b);
+  display.setCursor(24, 34);
+  display.print("Made with <3 by");
+  display.setCursor(29, 44);
+  display.print("@Spacehuhn");
+  display.display();
+
+  delay(1000);
+#endif
+
+  // second core
+  xTaskCreatePinnedToCore(
+    coreTask,               /* Function to implement the task */
+    "coreTask",             /* Name of the task */
+    2500,                   /* Stack size in words */
+    NULL,                   /* Task input parameter */
+    0,                      /* Priority of the task */
+    NULL,                   /* Task handle. */
+    RUNNING_CORE);          /* Core where the task should run */
+
+  // start Wifi sniffer
+  esp_wifi_set_promiscuous_rx_cb(&wifi_promiscuous);
+  esp_wifi_set_promiscuous(true);
+}
+void runPacketMon() {
+  vTaskDelay(portMAX_DELAY);
+}
+
+
+
+
 ////WIFI_SNIFFER SETUP
 #define LED_GPIO_PIN 26
 #define WIFI_CHANNEL_SWITCH_INTERVAL (5000)
@@ -1152,7 +1438,7 @@ typedef struct
   uint8_t bssid[6];
 } _DevilNetwork;
 
-const byte DNS_PORT = 53;
+const uint8_t DNS_PORT = 53;
 IPAddress apIP(192, 168, 1, 1);
 DNSServer dnsServer;
 WebServer webServer(80);
@@ -1408,7 +1694,7 @@ void runDevilTwin()
 // RTC setup
 RTC_Millis rtc;
 // Pin definitions for GPS module
-static const int RXPin = 31, TXPin = 30;
+static const int RXPin = 16, TXPin = 17;
 static const uint32_t GPSBaud = 9600; // GPS module baud rate
 #define SD_CS_PIN 5                   // Chip select pin for SD card
 #define MIN_SATELLITES 4              // Minimum number of satellites for a valid GPS fix
@@ -1596,7 +1882,7 @@ void initGPS()
       Serial.println("Initialization done.");
       break
   }
-  */
+  
   // delay(4000);
   //  Initialize CSV file
   if (!initializeCSV())
@@ -1608,6 +1894,7 @@ void initGPS()
     Serial.println("CSV Initialization done.");
   }
   delay(3000);
+  */
 
   rtc.begin(DateTime(F(__DATE__), F(__TIME__))); // Initialize RTC with compile time
 
@@ -1708,7 +1995,7 @@ void runRFID()
 
     // Card found, process it
     String uidString = "";
-    for (byte i = 0; i < mfrc522.uid.size; i++)
+    for (uint8_t i = 0; i < mfrc522.uid.size; i++)
     {
       uidString += (mfrc522.uid.uidByte[i] < 0x10 ? "0" : "") + String(mfrc522.uid.uidByte[i], HEX) + " ";
     }
@@ -1885,12 +2172,15 @@ void executeSelectedMenuItem()
 {
   switch (selectedMenuItem)
   {
-  /*
+  
   case PACKET_MON:
     Serial.println("PACKET button pressed");
-    currentState = STATE_PACKET_MONITOR;
+    currentState = STATE_PACKET_MON;
+    initPacketMon();
+    delay(5000);
+    runPacketMon();
     break;
-  */
+  
   case WIFI_SNIFF:
     Serial.println("WIFI SNIFF button pressed");
     currentState = STATE_WIFI_SNIFFER;
@@ -2066,15 +2356,22 @@ void loop()
   case STATE_MENU:
     handleMenuSelection();
     break;
-  case STATE_PACKET_MONITOR:
-    // runPacketMonitor();
-    break;
   case STATE_WIFI_SNIFFER:
     if (isButtonPressed(HOME_BUTTON_PIN))
     {
       currentState = STATE_MENU;
       // Clean up WiFi sniffer if necessary
       esp_wifi_set_promiscuous(false);
+      drawMenu();
+      delay(500); // Debounce delay
+      return;
+    }
+    break;
+  case STATE_PACKET_MON:
+    if (isButtonPressed(HOME_BUTTON_PIN))
+    {
+      delay(1000);
+      currentState = STATE_MENU;
       drawMenu();
       delay(500); // Debounce delay
       return;
