@@ -184,6 +184,9 @@ uint32_t deauths = 0;       // deauth frames per second
 unsigned int ch = 1;        // current 802.11 channel
 int rssiSum;
 
+// TASKS
+TaskHandle_t iphoneSpamTask;
+
 // *** DISPLAY
 void initDisplay()
 {
@@ -678,6 +681,7 @@ void initIphoneSpam()
   // seems we need to init it with an address in setup() step.
   esp_bd_addr_t null_addr = {0xFE, 0xED, 0xC0, 0xFF, 0xEE, 0x69};
   pAdvertising->setDeviceAddress(null_addr, BLE_ADDR_TYPE_RANDOM);
+  delay(2000);
 }
 
 void runIphoneSpam()
@@ -1682,6 +1686,15 @@ void runDevilTwin()
 {
   while (true)
   {
+    // Check if HOME_BUTTON is pressed
+    if (isButtonPressed(HOME_BUTTON_PIN))
+    {
+      currentState = STATE_MENU;
+      drawMenu();
+      delay(500); // Debounce delay
+      return;
+    }
+
     webServer.handleClient();
     dnsServer.processNextRequest();
     delay(10);
@@ -1903,29 +1916,42 @@ void initGPS()
 
 void runGPS()
 {
-  // Read GPS data
-  while (gpsSerial.available() > 0)
+  while (true)
   {
-    gps.encode(gpsSerial.read());
+    // Check if HOME_BUTTON is pressed
+    if (isButtonPressed(HOME_BUTTON_PIN))
+    {
+      currentState = STATE_MENU;
+      drawMenu();
+      delay(500); // Debounce delay
+      return;
+    }
+
+    // Read GPS data
+    while (gpsSerial.available() > 0)
+    {
+      gps.encode(gpsSerial.read());
+    }
+
+    // Check if GPS data is valid
+    if (gps.location.isValid() && gps.hdop.isValid() && gps.date.isValid() && gps.time.isValid() && gps.satellites.value() >= MIN_SATELLITES)
+    {
+      // Update RTC with GPS time
+      DateTime gpsTime(gps.date.year(), gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(), gps.time.second());
+      rtc.adjust(gpsTime);
+
+      // Display GPS data and scan for WiFi networks
+      displayGPSData();
+      scanWiFiNetworks();
+      displayGPSData();
+      delay(15000); // Wait 15 seconds before next scan
+    }
+    else
+    {
+      displaySearching();
+    }
   }
-  // Check if GPS data is valid
-  if (gps.location.isValid() && gps.hdop.isValid() && gps.date.isValid() && gps.time.isValid() && gps.satellites.value() >= MIN_SATELLITES)
-  {
-    // Update RTC with GPS time
-    DateTime gpsTime(gps.date.year(), gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(), gps.time.second());
-    rtc.adjust(gpsTime);
-    // Display GPS data and scan for WiFi networks
-    displayGPSData();
-    scanWiFiNetworks();
-    displayGPSData();
-    delay(15000); // Wait 15 seconds before next scan
-  }
-  else
-  {
-    displaySearching();
-  }
-}
-// *** TOOLS MODULES ***
+}// *** TOOLS MODULES ***
 
 // RFID START
 #define RST_PIN 25
@@ -1975,25 +2001,32 @@ void initRFID()
 void runRFID()
 {
   while (true)
-  { // Infinite loop
+  { 
+    // Check if HOME_BUTTON is pressed
+    if (isButtonPressed(HOME_BUTTON_PIN))
+    {
+      currentState = STATE_MENU;
+      drawMenu();
+      delay(500); // Debounce delay
+      return;
+    }
+
     if (!mfrc522.PICC_IsNewCardPresent())
     {
-      // No card found, update display every 5 seconds
       static unsigned long lastUpdate = 0;
       if (millis() - lastUpdate > 5000)
       {
         displayInfo("Ready", "Waiting for card...", "Place card near", "the reader");
         lastUpdate = millis();
       }
-      continue; // Continue to keep checking for a card
+      continue;
     }
 
     if (!mfrc522.PICC_ReadCardSerial())
     {
-      continue; // Keep checking if reading failed
+      continue;
     }
 
-    // Card found, process it
     String uidString = "";
     for (uint8_t i = 0; i < mfrc522.uid.size; i++)
     {
@@ -2006,15 +2039,13 @@ void runRFID()
     Serial.println(" UID: " + uidString);
     Serial.println(" Type: " + typeString);
 
-    delay(3000); // Short delay before returning to card scanning mode
+    delay(3000); 
     displayInfo("Ready", "Waiting for card...", "Place card near", "the reader");
 
-    // Stop card communication
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
   }
 }
-
 // *** SYSTEM MODULES ***
 // MENU
 // LEDS SETUP
@@ -2253,8 +2284,10 @@ void executeSelectedMenuItem()
     Serial.println("IPHONE SPAM button pressed");
     currentState = STATE_IPHONE_SPAM;
     initIphoneSpam();
-    delay(2000);
-    runIphoneSpam();
+    Serial.print("Starting bluetooth spam.");
+    delay(10000);
+    xTaskCreate(runIphoneSpamTask, "iPhoneSpam", 10000, NULL, 1, &iphoneSpamTask);
+    //runIphoneSpam();
     break;
   case DEVIL_TWIN:
     Serial.println("DEVIL TWIN button pressed");
