@@ -148,6 +148,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ80
 // WIFI SETTINGS
 String SerialSSID = "";
 String SerialPW = "";
+int totalNetworks = 0;  // Global variable to store the number of networks found
 
 // PACKET MONITOR SETTINGS
 #define MAX_CH 14      // 1 - 14 channels (1-11 for US, 1-13 for EU and 1-14 for Japan)
@@ -266,31 +267,86 @@ void initBTScan() {
   display.display();
   delay(2000);
 }
+
+// Structure to store minimal device info
+struct BTDeviceInfo {
+  String address;
+  int rssi;
+};
+
+BTDeviceInfo deviceList[30];  // Array to store device info
+int currentDeviceIndex = 0;   // Index of the currently displayed device
+int totalDevices = 0;         // Total number of devices found
+
 void runBTScan() {
   // Scan for BLE devices
   BLEScanResults *foundDevices = pBLEScan->start(scanTime, false);
   int bleDeviceCount = foundDevices->getCount();
   Serial.print("BLE Devices found: ");
   Serial.println(bleDeviceCount);
-  // Start displaying Bluetooth devices from line 5
-  int y = 5;
-  // Display/print details of the most recent 5 Bluetooth devices found
-  int numDevicesToDisplay = min(5, bleDeviceCount);  // Ensure we don't try to display more devices than were found
-  for (int i = bleDeviceCount - numDevicesToDisplay; i < bleDeviceCount; i++) {
+
+  // Store only necessary device information and free scan results immediately
+  totalDevices = min(bleDeviceCount, 30);  // Limit to prevent buffer overflow
+  for (int i = 0; i < totalDevices; i++) {
     BLEAdvertisedDevice device = foundDevices->getDevice(i);
-    String deviceInfo = "Latest BT Device:\n" + String(device.getAddress().toString().c_str());
-    deviceInfo += "\nRSSI: " + String(device.getRSSI());
-    // Add more information as needed
-    Serial.println(deviceInfo);
+    deviceList[i].address = String(device.getAddress().toString().c_str());
+    deviceList[i].rssi = device.getRSSI();
+  }
+
+
+  // Ensure currentDeviceIndex is within bounds
+  if (currentDeviceIndex >= totalDevices) {
+    currentDeviceIndex = 0;
+  }
+
+  // Display current device info
+  if (totalDevices > 0) {
+    // Display initial device
+    String deviceInfo = "Device " + String(currentDeviceIndex + 1) + "/" + String(totalDevices);
+    deviceInfo += "\n" + deviceList[currentDeviceIndex].address;
+    deviceInfo += "\nRSSI: " + String(deviceList[currentDeviceIndex].rssi);
+
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
     display.print(deviceInfo + "\nBLE Devices: " + String(bleDeviceCount));
     display.display();
-    delay(2000);  // Display each device info for 2 seconds
+
+    // Handle scrolling
+    unsigned long startTime = millis();
+    while (millis() - startTime < 10000) {  // 10 second window for scrolling
+      if (isButtonPressed(SELECT_BUTTON_PIN)) {
+        currentDeviceIndex = (currentDeviceIndex + 1) % totalDevices;
+
+        // Update display with new device from our stored list
+        deviceInfo = "Device " + String(currentDeviceIndex + 1) + "/" + String(totalDevices);
+        deviceInfo += "\n" + deviceList[currentDeviceIndex].address;
+        deviceInfo += "\nRSSI: " + String(deviceList[currentDeviceIndex].rssi);
+
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.print(deviceInfo + "\nBLE Devices: " + String(bleDeviceCount));
+        display.display();
+
+        delay(200);  // Simple debounce
+      }
+      delay(50);  // Small delay to prevent tight loop
+    }
+    // Clear scan results immediately to free memory
+    pBLEScan->clearResults();
+
+  } else {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.print("No devices found");
+    display.display();
+    delay(2000);
   }
-  delay(10000);  // Wait before scanning again
 }
 void cleanupBTScan() {
   // Stop BLE scan
@@ -314,14 +370,10 @@ void initBTSerialDisplay() {
   u8g2_for_adafruit_gfx.begin(display);
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
   const char *commands[] = {
-    "Available commands:",
-    "WIFI \"ssid for spaced named\"",
-    "PASS password",
-    "START_WIFI",
-    "STOP_WIFI",
-    "SCAN_WIFI",
-    "BT_SCAN",
-    "STOP_BT"
+    "BT SERIAL CMDS",
+    "Connect Serial Term.",
+    "Type HELP",
+    "Press Home 2 Exit",
   };
   for (int i = 0; i < 8; i++) {
     u8g2_for_adafruit_gfx.setCursor(0, i * 8);
@@ -332,7 +384,7 @@ void initBTSerialDisplay() {
 
 void initBTSerial() {
   // Initialize Bluetooth
-  if (!SerialBT.begin("cookiemangos")) {
+  if (!SerialBT.begin("cypherboxBT")) {
     Serial.println("An error occurred initializing Bluetooth");
   } else {
     Serial.println("Bluetooth initialized");
@@ -396,6 +448,18 @@ void handleCommand(String command) {
     stopBluetooth();
   } else if (command == "CREATE_AP") {
     SerialBT.println("CREATE_AP command received, but not implemented yet.");
+  } else if (command == "HELP") {
+    SerialBT.println("Available commands:");
+    SerialBT.println("1. WIFI \"<SSID>\" - Set the WiFi SSID");
+    SerialBT.println("2. PASS <password> - Set the WiFi password");
+    SerialBT.println("3. START_WIFI - Start the WiFi connection");
+    SerialBT.println("4. STOP_WIFI - Stop the WiFi connection");
+    SerialBT.println("5. SCAN_WIFI - Scan for available WiFi networks");
+    SerialBT.println("6. BT_SCAN - Scan for Bluetooth devices");
+    SerialBT.println("7. BT_HID - Activate Bluetooth HID mode");
+    SerialBT.println("8. STOP_BT - Stop Bluetooth connections");
+    SerialBT.println("9. CREATE_AP - Create a WiFi access point (not implemented)");
+    SerialBT.println("10. HELP - Show this help message");
   } else {
     SerialBT.println("Unknown command: " + command);
     Serial.println("Unknown command: " + command);
@@ -708,6 +772,7 @@ void clearArray() {
   }
 }
 
+
 void performScan() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
@@ -715,10 +780,11 @@ void performScan() {
   u8g2_for_adafruit_gfx.print("LOADING...");
   display.display();
   int n = WiFi.scanNetworks();
+  totalNetworks = WiFi.scanNetworks();
   clearArray();
   if (n >= 0) {
     Serial.println("Scanned Networks:");
-    for (int i = 0; i < n && i < 16; ++i) {
+    for (int i = 0; i < n && i < 30; ++i) {
       _Network network;
       network.ssid = WiFi.SSID(i);
       Serial.print("SSID: ");
@@ -745,22 +811,26 @@ void performScan() {
     }
   }
 }
+int currentIndex = 0;  // Keep track of the current starting index for the display
+const int networksPerPage = 5;
+
 void displayNetworkScan() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set to a small font
 
   // Display the title
   u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("Networks Found:");
+  u8g2_for_adafruit_gfx.print("Networks Found: " + totalNetworks);
 
   // Iterate through the _networks array and display each SSID
-  for (int i = 0; i < 16; ++i) {
-    if (_networks[i].ssid == "") {
+  for (int i = 0; i < networksPerPage; ++i) {
+    int index = currentIndex + i;
+    if (_networks[index].ssid == "") {
       break;  // Stop if there are no more networks
     }
 
     // Truncate the SSID if it's too long
-    String ssid = _networks[i].ssid;
+    String ssid = _networks[index].ssid;
     if (ssid.length() > 10) {
       ssid = ssid.substring(0, 10) + "...";
     }
@@ -772,20 +842,29 @@ void displayNetworkScan() {
 
     // Display RSSI
     u8g2_for_adafruit_gfx.setCursor(60, y);
-    u8g2_for_adafruit_gfx.print(_networks[i].rssi);
+    u8g2_for_adafruit_gfx.print(_networks[index].rssi);
     u8g2_for_adafruit_gfx.print(" dBm");
 
     // Display channel
     u8g2_for_adafruit_gfx.setCursor(95, y);
     u8g2_for_adafruit_gfx.print("CH:");
-    u8g2_for_adafruit_gfx.print(_networks[i].ch);
+    u8g2_for_adafruit_gfx.print(_networks[index].ch);
 
     // If the display area is exceeded, stop displaying
     if (y > 63) {
       break;
     }
   }
+
   display.display();
+
+  // Check if the button is pressed to iterate through networks
+  if (isButtonPressed(SELECT_BUTTON_PIN)) {
+    currentIndex += networksPerPage;  // Move to the next set of networks
+    if (currentIndex >= 16) {         // If we've reached the end, loop back
+      currentIndex = 0;
+    }
+  }
 }
 
 // Wifi Connect Credentials
@@ -812,15 +891,17 @@ void startServer() {
     u8g2_for_adafruit_gfx.print(ssid);
   }
   Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println("WiFi: ");
+  Serial.println(ssid);
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
   // Clear the display (assuming 'display' is a valid object)
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("WiFi connected");
-  u8g2_for_adafruit_gfx.setCursor(0, 20);
-  u8g2_for_adafruit_gfx.print("IP address: ");
+  u8g2_for_adafruit_gfx.print("WiFi: ");
+  u8g2_for_adafruit_gfx.print(ssid);
+  u8g2_for_adafruit_gfx.setCursor(0, 30);
+  u8g2_for_adafruit_gfx.print("Web Serv: ");
   u8g2_for_adafruit_gfx.print(WiFi.localIP());
 
   // Start the web server
@@ -828,14 +909,17 @@ void startServer() {
   server.begin();
   serverRunning = true;
   Serial.println("Server started");
-  u8g2_for_adafruit_gfx.setCursor(0, 30);
-  u8g2_for_adafruit_gfx.print("Server started");
+  u8g2_for_adafruit_gfx.setCursor(0, 40);
+  u8g2_for_adafruit_gfx.print("Connect to Web UI");
+  u8g2_for_adafruit_gfx.setCursor(0, 50);
+  u8g2_for_adafruit_gfx.print("Press Home to Exit.");
+  display.display();
   // server.handleClient();
 }
 
 // SOFT AP credentials to create wifi network
-const char *softAP = "mangubuttercream";
-const char *softPass = "mango12345";
+const char *softAP = "cypherbox";
+const char *softPass = "cypher12345!";
 void startSoftAP() {
   // Connect to WiFi
   display.clearDisplay();
@@ -849,19 +933,22 @@ void startSoftAP() {
   u8g2_for_adafruit_gfx.print(ssid);
   WiFi.softAP(softAP, softPass);
   IPAddress IP = WiFi.softAPIP();
+  delay(2000);
   Serial.print("SOFT AP IP address: ");
   Serial.println(IP);
 
   Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println("WEB UI STARTED");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
   // Clear the display (assuming 'display' is a valid object)
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("WiFi connected");
+  u8g2_for_adafruit_gfx.print("WEB AP STARTED");
   u8g2_for_adafruit_gfx.setCursor(0, 30);
-  u8g2_for_adafruit_gfx.print("IP address: ");
+  u8g2_for_adafruit_gfx.print("Connect to UI :");
+  u8g2_for_adafruit_gfx.setCursor(0, 40);
+  u8g2_for_adafruit_gfx.print("IP: ");
   u8g2_for_adafruit_gfx.print(WiFi.localIP());
 
   // Start the web server
@@ -869,7 +956,10 @@ void startSoftAP() {
   server.begin();
   serverRunning = true;
   Serial.println("Server started");
-  u8g2_for_adafruit_gfx.print("Server started");
+  u8g2_for_adafruit_gfx.setCursor(0, 50);
+  u8g2_for_adafruit_gfx.print("Wifi:");
+  u8g2_for_adafruit_gfx.setCursor(0, 60);
+  u8g2_for_adafruit_gfx.print(ssid);
   // server.handleClient();
   display.display();
 }
@@ -885,9 +975,9 @@ void handleStopServer() {
   Serial.println("Server stopped");
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("Web Server Stopped!");
+  u8g2_for_adafruit_gfx.print("WEB SERVER STOPPED!");
   u8g2_for_adafruit_gfx.setCursor(0, 30);
-  u8g2_for_adafruit_gfx.print("Press any key to go back.");
+  u8g2_for_adafruit_gfx.print("Press home key to go back.");
   display.display();
 }
 void handleStopAP() {
@@ -897,9 +987,9 @@ void handleStopAP() {
   Serial.println("Server stopped & soft AP turned off");
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("Soft AP Stopped!");
+  u8g2_for_adafruit_gfx.print("SOFT AP STOPPED!");
   u8g2_for_adafruit_gfx.setCursor(0, 20);
-  u8g2_for_adafruit_gfx.print("Press any key to go back.");
+  u8g2_for_adafruit_gfx.print("Press home key to go back.");
   display.display();
 }
 void printOnDisplay(String message) {
@@ -1524,23 +1614,39 @@ void handleIndex() {
   }
 }
 void initDevilTwin() {
+  display.clearDisplay();
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
+  u8g2_for_adafruit_gfx.setCursor(0, 10);
+  u8g2_for_adafruit_gfx.print("DEVIL WIFI TWIN ");
+  u8g2_for_adafruit_gfx.setCursor(0, 30);
+  u8g2_for_adafruit_gfx.print("WEB UI = 192.168.4.1 ");
+  u8g2_for_adafruit_gfx.setCursor(0, 30);
+  u8g2_for_adafruit_gfx.print("WIFI - CypherTwin ");
+  u8g2_for_adafruit_gfx.setCursor(0, 50);
+  u8g2_for_adafruit_gfx.print("PW - 12345678 ");
+  display.display();
   WiFi.mode(WIFI_AP_STA);
   delay(3000);
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP("DevilTwin", "12345678");
+  WiFi.softAP("CypherTwin", "12345678");
   delay(3000);
   dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
   delay(3000);
   performDevilScan();  // Add this line to perform the network scan
   delay(3000);
+  Serial.println("scan complete");
   webServer.on("/", handleIndex);
   webServer.on("/result", handleResult);
+  Serial.println("webserver started");
   // webServer.on("/admin", handleAdmin);
   webServer.onNotFound(handleIndex);
   webServer.begin();
+  Serial.println("webserver begin, initdeviltwin done!");
+
   delay(3000);
 }
 void runDevilTwin() {
+  Serial.println("runDevilTwin() strarting");
   while (true) {
     // Check if HOME_BUTTON is pressed
     if (isButtonPressed(HOME_BUTTON_PIN)) {
@@ -1549,7 +1655,6 @@ void runDevilTwin() {
       delay(500);  // Debounce delay
       return;
     }
-
     webServer.handleClient();
     dnsServer.processNextRequest();
     delay(10);
