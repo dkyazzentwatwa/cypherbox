@@ -25,7 +25,7 @@
 #include "SD_MMC.h"
 #include "Buffer.h"
 // RFID
-
+#include <Adafruit_PN532.h>
 #include <SPI.h>
 // GPS
 #include <TinyGPSPlus.h>
@@ -47,13 +47,17 @@ int jammingmode = 0;
 
 // defining PINs set for ESP32 module
 // Example for XIAO ESP32 C3
-byte sck = 8;    // GPIO 8
-byte miso = 4;   // GPIO 4
-byte mosi = 10;  // GPIO 10
-byte ss = 20;    // GPIO 20
-int gdo0 = 21;   // GPIO 21
-int gdo2 = 7;    // GPIO 7
+byte sck = 4;   // GPIO 8
+byte miso = 5;  // GPIO 4
+byte mosi = 6;  // GPIO 10
+byte ss = 7;    // GPIO 20
+int gdo0 = 0;   // GPIO 21
+int gdo2 = 99;  // GPIO 7
 
+#define SD_CS 10
+#define SD_MOSI 6  // SD Card MOSI pin
+#define SD_MISO 5  // SD Card MISO pin
+#define SD_SCK 4   // SD Card SCK pin
 //PN532
 #define PN532_IRQ (2)
 #define PN532_RESET (3)
@@ -151,6 +155,11 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ80
 #define DOWN_BUTTON_PIN 2
 #define SELECT_BUTTON_PIN 3
 #define HOME_BUTTON_PIN 3
+//SD CARD
+#define SD_CS 10
+#define SD_MOSI 6  // SD Card MOSI pin
+#define SD_MISO 5  // SD Card MISO pin
+#define SD_SCK 4   // SD Card SCK pin
 
 // WIFI SETTINGS
 String SerialSSID = "";
@@ -159,10 +168,14 @@ int totalNetworks = 0;  // Global variable to store the number of networks found
 
 // PN532 RFID/NFC SETTINGS
 // Variables for NFC data handling
+Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 const int MAX_NFC_DATA_SIZE = 16;  // Standard MIFARE Classic block size
 char currentFileName[13];          // 8.3 format filename buffer
 const char *menuItems[] = { "Read", "Read NDEF", "Read/Write", "Erase", "SD Card" };
 
+// CC1101
+// buffer for sending  CC1101
+byte ccsendingbuffer[CCBUFFERSIZE] = { 0 };
 // Global state variables
 bool inMenu = true;
 bool inSDMenu = false;
@@ -278,6 +291,22 @@ void drawMenu() {
     display.setTextSize(1);
     display.println(menuLabels[menuIndex]);
   }
+  display.display();
+}
+void displayInfo(String title, String info1 = "", String info2 = "", String info3 = "") {
+  display.clearDisplay();
+  drawBorder();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(4, 4);
+  display.println(title);
+  display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
+  display.setCursor(4, 18);
+  display.println(info1);
+  display.setCursor(4, 28);
+  display.println(info2);
+  display.setCursor(4, 38);
+  display.println(info3);
   display.display();
 }
 
@@ -1054,7 +1083,7 @@ void initWifiSniffer() {
   // delay(10);
   // initDisplay(); // Initialize the display
   wifi_sniffer_init();
-  p  //inMode(LED_GPIO_PIN, OUTPUT);
+  //inMode(LED_GPIO_PIN, OUTPUT);
 }
 
 void runWifiSniffer() {
@@ -1550,30 +1579,109 @@ void runGPS() {
     }
   }
 }
+void initSDCard() {
+  displayInfo("SD Card", "Initializing...", "");
+  Serial.println("Beginning SD Card initialization...");
+
+  // Disable any existing SPI devices
+  digitalWrite(SD_CS, HIGH);
+  delay(100);
+
+  // Force SPI to known state
+  SPI.end();
+  delay(100);
+
+  // Initialize SPI with explicit settings
+  SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
+
+  // Begin SPI with forced pins
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  delay(100);
+
+  // Configure CS pin
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);
+  delay(100);
+
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  delay(3000);
+  // Try to initialize SD card
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD Card initialization failed!");
+    displayInfo("SD Error", "Init failed!", "Check connection");
+    delay(2000);
+    return;
+  }
+
+  // Get SD card info
+  uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE) {
+    Serial.println("No SD card attached!");
+    displayInfo("SD Error", "No card found!", "Check card");
+    delay(2000);
+    return;
+  }
+
+  // Print card type
+  String cardTypeStr = "Unknown";
+  switch (cardType) {
+    case CARD_MMC: cardTypeStr = "MMC"; break;
+    case CARD_SD: cardTypeStr = "SDSC"; break;
+    case CARD_SDHC: cardTypeStr = "SDHC"; break;
+    default: cardTypeStr = "Unknown"; break;
+  }
+
+  // Get card size
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+
+  // Display success and card info
+  String sizeStr = String(cardSize) + "MB";
+  displayInfo("SD Card OK", cardTypeStr, sizeStr);
+  delay(2000);
+
+  // Try to open root directory
+  File root = SD.open("/");
+  if (!root) {
+    Serial.println("Failed to open root directory");
+    displayInfo("SD Error", "Can't open root", "Format FAT32");
+    delay(2000);
+    return;
+  }
+  if (!root.isDirectory()) {
+    Serial.println("Root is not a directory");
+    displayInfo("SD Error", "Root invalid", "Format FAT32");
+    delay(2000);
+    return;
+  }
+
+  // Count files in root directory
+  int fileCount = 0;
+  while (true) {
+    File entry = root.openNextFile();
+    if (!entry) break;
+    fileCount++;
+    Serial.print("Found file: ");
+    Serial.println(entry.name());
+    entry.close();
+  }
+  root.close();
+
+  // Show file count
+  Serial.println("SD Ready");
+  Serial.print(String(fileCount));
+  Serial.print(" files found");
+  displayInfo("SD Ready", String(fileCount) + " files", "found");
+  delay(2000);
+}
 
 
 // RFID NFC START
 void initNFC() {
-  displayTitleScreen();
-  delay(3000);
-  displayInfoScreen();
-  delay(5000);
-  initSDCard();
+  //displayTitleScreen();
+  //displayInfoScreen();
+  //initSDCard();
   displayInfo("PN532 NFC", "Init. SD Card + NFC...");
-  nfc.begin();
-  delay(2000);
-  uint32_t versiondata = nfc.getFirmwareVersion();
-  if (!versiondata) {
-    displayInfo("Error", "PN532 not", "found");
-    while (1)
-      ;
-  }
-  String fwVersion = "FW: " + String((versiondata >> 16) & 0xFF) + "." + String((versiondata >> 8) & 0xFF);
-  String chipInfo = "Chip: PN5" + String((versiondata >> 24) & 0xFF, HEX);
-  displayInfo("PN532 Info", chipInfo, fwVersion);
-  delay(2000);
-  nfc.SAMConfig();
-  displayMenu();
+  drawMenu();
 }
 void readCard() {
   while (true) {  // Keep scanning in a loop
@@ -1614,11 +1722,11 @@ void readCard() {
 
               // Wait for save decision
               while (true) {
-                if (digitalRead(BUTTON_UP) == LOW) {
+                if (digitalRead(UP_BUTTON_PIN) == LOW) {
                   saveToSD = true;
                   break;
                 }
-                if (digitalRead(BUTTON_DOWN) == LOW) {
+                if (digitalRead(DOWN_BUTTON_PIN) == LOW) {
                   saveToSD = false;
                   break;
                 }
@@ -1634,11 +1742,12 @@ void readCard() {
                 Serial.print("size of Block Data");
                 Serial.print(sizeof(blockData));
                 delay(3000);
+                /*
                 if (saveNFCDataToSD(blockData, sizeof(blockData))) {
                   displayInfo("Save Success", currentFileName, "Data saved");
                 } else {
                   displayInfo("Save Failed", "SD Card Error", "Check card");
-                }
+                }*/
                 delay(2000);
               }
             }
@@ -1656,23 +1765,28 @@ void readCard() {
     }
 
     if (cardRead) {
-      delay(3000);    // Wait before returning to the main menu
-      displayMenu();  // Call main menu function
-      break;          // Exit the outer loop after successful read
+      delay(3000);  // Wait before returning to the main menu
+      drawMenu();   // Call main menu function
+      break;        // Exit the outer loop after successful read
     }
   }
 }
 
 // *** CC1101 JAMMER
 void initCC1101() {
+  display.clearDisplay();
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
+  u8g2_for_adafruit_gfx.setCursor(0, 10);
+  u8g2_for_adafruit_gfx.print("CC110R JAMMER ");
+  /*
   cc1101initialize();
-  delay(1000);
   if (ELECHOUSE_cc1101.getCC1101()) {  // Check the CC1101 Spi connection.
-    Serial.println(F("cc1101 initialized. Connection OK\n\r"));
+    Serial.println("cc1101 initialized. Connection OK");
   } else {
-    Serial.println(F("cc1101 connection error! check the wiring.\n\r"));
-  };
+    Serial.println("cc1101 connection error! check the wiring.");
+  };*/
 }
+/*
 // convert bytes in table to string with hex numbers
 void asciitohex(byte *ascii_ptr, byte *hex_ptr, int len) {
   byte i, j, k;
@@ -1713,15 +1827,23 @@ void hextoascii(byte *ascii_ptr, byte *hex_ptr, int len) {
   };
   ascii_ptr[i++] = '\0';
 }
-
+*/
 // Initialize CC1101 board with default settings, you may change your preferences here
 static void cc1101initialize(void) {
+  Serial.println("starting cc1101 init");
   // initializing library with custom pins selected
   ELECHOUSE_cc1101.setSpiPin(sck, miso, mosi, ss);
-  ELECHOUSE_cc1101.setGDO(gdo0, gdo2);
+  Serial.println("Before Init()");
+  digitalWrite(ss, LOW);   // Select CC1101
+  digitalWrite(ss, HIGH);  // Deselect CC1101 after initialization
+  ELECHOUSE_cc1101.setGDO(gdo0, gdo0);
+  Serial.println("setGDO(gdo0, gdo0) done");
+
 
   // Main part to tune CC1101 with proper frequency, modulation and encoding
-  ELECHOUSE_cc1101.Init();                 // must be set to initialize the cc1101!
+  ELECHOUSE_cc1101.Init();  // must be set to initialize the cc1101!
+  Serial.println("cc1101.Init() done!");
+
   ELECHOUSE_cc1101.setGDO0(gdo0);          // set lib internal gdo pin (gdo0). Gdo2 not use for this example.
   ELECHOUSE_cc1101.setCCMode(1);           // set config for internal transmission mode. value 0 is for RAW recording/replaying
   ELECHOUSE_cc1101.setModulation(2);       // set modulation mode. 0 = 2-FSK, 1 = GFSK, 2 = ASK/OOK, 3 = 4-FSK, 4 = MSK.
@@ -1737,27 +1859,34 @@ static void cc1101initialize(void) {
   ELECHOUSE_cc1101.setAdrChk(0);           // Controls address check configuration of received packages. 0 = No address check. 1 = Address check, no broadcast. 2 = Address check and 0 (0x00) broadcast. 3 = Address check and 0 (0x00) and 255 (0xFF) broadcast.
   ELECHOUSE_cc1101.setAddr(0);             // Address used for packet filtration. Optional broadcast addresses are 0 (0x00) and 255 (0xFF).
   ELECHOUSE_cc1101.setWhiteData(0);        // Turn data whitening on / off. 0 = Whitening off. 1 = Whitening on.
-  ELECHOUSE_cc1101.setPktFormat(0);        // Format of RX and TX data. 0 = Normal mode, use FIFOs for RX and TX. 1 = Synchronous serial mode, Data in on GDO0 and data out on either of the GDOx pins. 2 = Random TX mode; sends random data using PN9 generator. Used for test. Works as normal mode, setting 0 (00), in RX. 3 = Asynchronous serial mode, Data in on GDO0 and data out on either of the GDOx pins.
-  ELECHOUSE_cc1101.setLengthConfig(1);     // 0 = Fixed packet length mode. 1 = Variable packet length mode. 2 = Infinite packet length mode. 3 = Reserved
-  ELECHOUSE_cc1101.setPacketLength(0);     // Indicates the packet length when fixed packet length mode is enabled. If variable packet length mode is used, this value indicates the maximum packet length allowed.
-  ELECHOUSE_cc1101.setCrc(0);              // 1 = CRC calculation in TX and CRC check in RX enabled. 0 = CRC disabled for TX and RX.
-  ELECHOUSE_cc1101.setCRC_AF(0);           // Enable automatic flush of RX FIFO when CRC is not OK. This requires that only one packet is in the RXIFIFO and that packet length is limited to the RX FIFO size.
-  ELECHOUSE_cc1101.setDcFilterOff(0);      // Disable digital DC blocking filter before demodulator. Only for data rates ≤ 250 kBaud The recommended IF frequency changes when the DC blocking is disabled. 1 = Disable (current optimized). 0 = Enable (better sensitivity).
-  ELECHOUSE_cc1101.setManchester(0);       // Enables Manchester encoding/decoding. 0 = Disable. 1 = Enable.
-  ELECHOUSE_cc1101.setFEC(0);              // Enable Forward Error Correction (FEC) with interleaving for packet payload (Only supported for fixed packet length mode. 0 = Disable. 1 = Enable.
-  ELECHOUSE_cc1101.setPRE(0);              // Sets the minimum number of preamble bytes to be transmitted. Values: 0 : 2, 1 : 3, 2 : 4, 3 : 6, 4 : 8, 5 : 12, 6 : 16, 7 : 24
-  ELECHOUSE_cc1101.setPQT(0);              // Preamble quality estimator threshold. The preamble quality estimator increases an internal counter by one each time a bit is received that is different from the previous bit, and decreases the counter by 8 each time a bit is received that is the same as the last bit. A threshold of 4∙PQT for this counter is used to gate sync word detection. When PQT=0 a sync word is always accepted.
-  ELECHOUSE_cc1101.setAppendStatus(0);     // When enabled, two status bytes will be appended to the payload of the packet. The status bytes contain RSSI and LQI values, as well as CRC OK.
+  Serial.println("halfway done");
+  ELECHOUSE_cc1101.setPktFormat(0);     // Format of RX and TX data. 0 = Normal mode, use FIFOs for RX and TX. 1 = Synchronous serial mode, Data in on GDO0 and data out on either of the GDOx pins. 2 = Random TX mode; sends random data using PN9 generator. Used for test. Works as normal mode, setting 0 (00), in RX. 3 = Asynchronous serial mode, Data in on GDO0 and data out on either of the GDOx pins.
+  ELECHOUSE_cc1101.setLengthConfig(1);  // 0 = Fixed packet length mode. 1 = Variable packet length mode. 2 = Infinite packet length mode. 3 = Reserved
+  ELECHOUSE_cc1101.setPacketLength(0);  // Indicates the packet length when fixed packet length mode is enabled. If variable packet length mode is used, this value indicates the maximum packet length allowed.
+  ELECHOUSE_cc1101.setCrc(0);           // 1 = CRC calculation in TX and CRC check in RX enabled. 0 = CRC disabled for TX and RX.
+  ELECHOUSE_cc1101.setCRC_AF(0);        // Enable automatic flush of RX FIFO when CRC is not OK. This requires that only one packet is in the RXIFIFO and that packet length is limited to the RX FIFO size.
+  ELECHOUSE_cc1101.setDcFilterOff(0);   // Disable digital DC blocking filter before demodulator. Only for data rates ≤ 250 kBaud The recommended IF frequency changes when the DC blocking is disabled. 1 = Disable (current optimized). 0 = Enable (better sensitivity).
+  ELECHOUSE_cc1101.setManchester(0);    // Enables Manchester encoding/decoding. 0 = Disable. 1 = Enable.
+  ELECHOUSE_cc1101.setFEC(0);           // Enable Forward Error Correction (FEC) with interleaving for packet payload (Only supported for fixed packet length mode. 0 = Disable. 1 = Enable.
+  ELECHOUSE_cc1101.setPRE(0);           // Sets the minimum number of preamble bytes to be transmitted. Values: 0 : 2, 1 : 3, 2 : 4, 3 : 6, 4 : 8, 5 : 12, 6 : 16, 7 : 24
+  ELECHOUSE_cc1101.setPQT(0);           // Preamble quality estimator threshold. The preamble quality estimator increases an internal counter by one each time a bit is received that is different from the previous bit, and decreases the counter by 8 each time a bit is received that is the same as the last bit. A threshold of 4∙PQT for this counter is used to gate sync word detection. When PQT=0 a sync word is always accepted.
+  ELECHOUSE_cc1101.setAppendStatus(0);  // When enabled, two status bytes will be appended to the payload of the packet. The status bytes contain RSSI and LQI values, as well as CRC OK.
+  Serial.println("ending cc1101 init..done!");
 }
 
 
 void runCC1101() {
+  int i = 0;
+  jammingmode = 1;
   // if jamming mode activate continously send something over RF...
   if (jammingmode == 1) {
+    Serial.println("Starting Jammer..");
     // populate cc1101 sending buffer with random values
     randomSeed(analogRead(0));
-    for (i = 0; i < 60; i++) { ccsendingbuffer[i] = (byte)random(255); };
-    // send these data to radio over CC1101
+    for (i = 0; i < 60; i++) {
+      ccsendingbuffer[i] = (uint8_t)random(255);
+      Serial.print("Sent");
+    }  // send these data to radio over CC1101
     ELECHOUSE_cc1101.SendData(ccsendingbuffer, 60);
   };
 }
@@ -1910,10 +2039,10 @@ void executeSelectedMenuItem() {
       readCard();
       break;
     case CC1101_JAM:
-      currentState = CC1101_JAM;
+      currentState = STATE_CC1101;
       Serial.println("CC1101 button pressed");
-      initCC1101();
-      delay(2000);
+      //initCC1101();
+      //delay(2000);
       runCC1101();
       break;
     case WARDRIVER:
@@ -1957,35 +2086,73 @@ void displayInfoScreen() {
 void setup() {
   Serial.begin(115200);
   delay(10);
-  pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(DOWN_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(SELECT_BUTTON_PIN, INPUT_PULLUP);
 
   // Initialize I2C
   Wire.begin(8, 9);
   Wire.setClock(100000);
+  delay(3000);
+  digitalWrite(SD_CS, HIGH);
+  delay(100);
+  digitalWrite(ss, HIGH);  // Deselect CC1101
+  delay(100);
+  // Force SPI to known state
+  SPI.end();
+  delay(100);
+  SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
+
+/*
+  // Initialize the SD card
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);  // Deselect the SD card
+  delay(100);
+  */
+  pinMode(ss, OUTPUT);
+  digitalWrite(ss, HIGH);  // Deselect CC1101
+  delay(100);
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  delay(3000);
+  // Initialize SPI with explicit settings
+/*
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD card initialization failed!");
+    return;
+  }
+  Serial.println("SD card initialized.");
+*/
+  // Initialize the CC1101
+  EEPROM.begin(EPROMSIZE);
+  cc1101initialize();
+  pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(DOWN_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(SELECT_BUTTON_PIN, INPUT_PULLUP);
   initDisplay();
   //display.setRotation(2);  // Rotate display by 180 degrees
-
   // Initialize U8g2_for_Adafruit_GFX
   u8g2_for_adafruit_gfx.begin(display);
   //initSDCard();
-  /*
+
   //Init EEPROM - for ESP32 based boards only
-  EEPROM.begin(EPROMSIZE);
+
+  //cc1101initialize();
+  if (ELECHOUSE_cc1101.getCC1101()) {  // Check the CC1101 Spi connection.
+    Serial.println("cc1101 initialized. Connection OK");
+  } else {
+    Serial.println("cc1101 connection error! check the wiring.");
+  };
+
 
   // initialize CC1101 module with preffered parameters
-  cc1101initialize();
+  /*cc1101initialize();
 
   if (ELECHOUSE_cc1101.getCC1101()) {  // Check the CC1101 Spi connection.
     Serial.println(F("cc1101 initialized. Connection OK\n\r"));
   } else {
     Serial.println(F("cc1101 connection error! check the wiring.\n\r"));
-  };
+  }*/
 
   // setup variables
-  bigrecordingbufferpos = 0;
-  */
+  //bigrecordingbufferpos = 0;
+
   /*
     strip.begin();
     strip.setPixelColor(0, strip.Color(255, 0, 0)); // Bright red
@@ -1993,16 +2160,28 @@ void setup() {
     */
 
   // Display splash screens
-  /*displayTitleScreen();
-    delay(3000); // Show title screen for 3 seconds
-    displayInfoScreen();
-    delay(5000); // Show info screen for 5 seconds
-    */
+  displayTitleScreen();
+  delay(1000);  // Show title screen for 3 seconds
+  displayInfoScreen();
+  delay(2000);  // Show info screen for 5 seconds
+
   // Initial display
+  nfc.begin();
+  delay(5000);
+  uint32_t versiondata = nfc.getFirmwareVersion();
+  if (!versiondata) {
+    displayInfo("Error", "PN532 not", "found");
+    while (1)
+      ;
+  }
+  String fwVersion = "FW: " + String((versiondata >> 16) & 0xFF) + "." + String((versiondata >> 8) & 0xFF);
+  String chipInfo = "Chip: PN5" + String((versiondata >> 24) & 0xFF, HEX);
+  displayInfo("PN532 Info", chipInfo, fwVersion);
+  delay(2000);
+  nfc.SAMConfig();
+
   drawMenu();
-  Serial.println("System started, STATE = ");
-  Serial.print(currentState);
-  Serial.print(buttonPressed);
+  Serial.println("System started!");
 }
 
 unsigned long lastDebounceTime = 0;

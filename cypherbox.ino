@@ -93,7 +93,7 @@ enum MenuItem {
 };
 
 /*
-
+for future nesting of menus to clean it up...
 enum WifiItem
 {
   AP_SCAN,
@@ -117,6 +117,8 @@ enum RfidItem
   ERASE
 };
 */
+
+
 // volatile bool stopSniffer = false; // Flag to stop the sniffer
 volatile bool snifferRunning = true;
 const int MAX_VISIBLE_MENU_ITEMS = 3;  // Maximum number of items visible on the screen at a time
@@ -279,75 +281,53 @@ int currentDeviceIndex = 0;   // Index of the currently displayed device
 int totalDevices = 0;         // Total number of devices found
 
 void runBTScan() {
-  // Scan for BLE devices
+  // Start BLE scan and get the device count
   BLEScanResults *foundDevices = pBLEScan->start(scanTime, false);
   int bleDeviceCount = foundDevices->getCount();
-  Serial.print("BLE Devices found: ");
-  Serial.println(bleDeviceCount);
-
-  // Store only necessary device information and free scan results immediately
-  totalDevices = min(bleDeviceCount, 30);  // Limit to prevent buffer overflow
+  int devicesPerPage = 4;  // Max devices displayed per page
+  int currentPage = 0;
+  
+  // Store relevant information and free scan results
+  totalDevices = min(bleDeviceCount, 30);
   for (int i = 0; i < totalDevices; i++) {
     BLEAdvertisedDevice device = foundDevices->getDevice(i);
     deviceList[i].address = String(device.getAddress().toString().c_str());
     deviceList[i].rssi = device.getRSSI();
   }
+  pBLEScan->clearResults();
 
-
-  // Ensure currentDeviceIndex is within bounds
-  if (currentDeviceIndex >= totalDevices) {
-    currentDeviceIndex = 0;
-  }
-
-  // Display current device info
-  if (totalDevices > 0) {
-    // Display initial device
-    String deviceInfo = "Device " + String(currentDeviceIndex + 1) + "/" + String(totalDevices);
-    deviceInfo += "\n" + deviceList[currentDeviceIndex].address;
-    deviceInfo += "\nRSSI: " + String(deviceList[currentDeviceIndex].rssi);
-
+  // Display loop for pages
+  while (true) {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
-    display.print(deviceInfo + "\nBLE Devices: " + String(bleDeviceCount));
-    display.display();
+    display.print("Devices found: ");
+    display.println(totalDevices);
 
-    // Handle scrolling
-    unsigned long startTime = millis();
-    while (millis() - startTime < 10000) {  // 10 second window for scrolling
-      if (isButtonPressed(SELECT_BUTTON_PIN)) {
-        currentDeviceIndex = (currentDeviceIndex + 1) % totalDevices;
-
-        // Update display with new device from our stored list
-        deviceInfo = "Device " + String(currentDeviceIndex + 1) + "/" + String(totalDevices);
-        deviceInfo += "\n" + deviceList[currentDeviceIndex].address;
-        deviceInfo += "\nRSSI: " + String(deviceList[currentDeviceIndex].rssi);
-
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(SSD1306_WHITE);
-        display.setCursor(0, 0);
-        display.print(deviceInfo + "\nBLE Devices: " + String(bleDeviceCount));
-        display.display();
-
-        delay(200);  // Simple debounce
-      }
-      delay(50);  // Small delay to prevent tight loop
+    // Display devices on the current page
+    for (int i = 0; i < devicesPerPage && i + currentPage * devicesPerPage < totalDevices; i++) {
+      int index = i + currentPage * devicesPerPage;
+      display.setCursor(0, (i + 1) * 10);
+      display.print(deviceList[index].address);
+      display.print(" RSSI: ");
+      display.println(deviceList[index].rssi);
     }
-    // Clear scan results immediately to free memory
-    pBLEScan->clearResults();
-
-  } else {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.print("No devices found");
     display.display();
-    delay(2000);
+
+    // Wait for button press to change page
+    unsigned long startTime = millis();
+    while (millis() - startTime < 10000) {  // 10 seconds to view page
+      if (isButtonPressed(SELECT_BUTTON_PIN)) {
+        currentPage = (currentPage + 1) % ((totalDevices + devicesPerPage - 1) / devicesPerPage);
+        delay(200);  // Simple debounce
+        break;
+      }
+      delay(50);
+    }
   }
 }
+
 void cleanupBTScan() {
   // Stop BLE scan
   if (pBLEScan) {
@@ -680,7 +660,6 @@ void initIphoneSpam() {
   u8g2_for_adafruit_gfx.print("Restart Phone to Stop...");
   display.display();
   BLEDevice::init("AirPods 69");
-  delay(3000);
 
   // Increase BLE Power to 9dBm (MAX)
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
@@ -1290,59 +1269,38 @@ void runPacketMon() {
   }
 }
 // start Wifi sniffer
-
-////WIFI_SNIFFER SETUP
 #define LED_GPIO_PIN 26
 #define WIFI_CHANNEL_SWITCH_INTERVAL (5000)
 #define WIFI_CHANNEL_MAX (13)
-uint8_t level = 0, channel = 1;
+uint8_t channel = 1;
+//bool snifferRunning = true;
 
-static wifi_country_t wifi_country = { .cc = "CN", .schan = 1, .nchan = 13 };  // Most recent esp32 library struct
+static wifi_country_t wifi_country = {.cc = "CN", .schan = 1, .nchan = 13};  // Country configuration
 
-typedef struct
-{
+typedef struct {
   unsigned frame_ctrl : 16;
   unsigned duration_id : 16;
-  uint8_t addr1[6]; /* receiver address */
-  uint8_t addr2[6]; /* sender address */
-  uint8_t addr3[6]; /* filtering address */
+  uint8_t addr1[6];
+  uint8_t addr2[6];
+  uint8_t addr3[6];
   unsigned sequence_ctrl : 16;
-  uint8_t addr4[6]; /* optional */
+  uint8_t addr4[6];
 } wifi_ieee80211_mac_hdr_t;
 
-typedef struct
-{
+typedef struct {
   wifi_ieee80211_mac_hdr_t hdr;
-  uint8_t payload[0]; /* network data ended with 4 bytes csum (CRC32) */
+  uint8_t payload[0];
 } wifi_ieee80211_packet_t;
 
-// static esp_err_t event_handler(void *ctx, system_event_t *event);
-static void wifi_sniffer_init(void);
 static void wifi_sniffer_set_channel(uint8_t channel);
-static const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type);
-// static void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type);
-
-/*esp_err_t event_handler(void *ctx, system_event_t *event)
-  {
-    return ESP_OK;
-  }
-  */
-// gemini
-static void event_handler(void *arg, esp_event_base_t event_base,
-                          int32_t event_id, void *event_data) {
-  // Handle events here
-}
+static void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type);
 
 void wifi_sniffer_init(void) {
   nvs_flash_init();
-  // tcpip_adapter_init();
-  // ESP_ERROR_CHECK( esp_event_loop_init(event_handler, NULL) );
-  // gemini
   ESP_ERROR_CHECK(esp_event_loop_create_default());
-  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-  ESP_ERROR_CHECK(esp_wifi_set_country(&wifi_country)); /* set country for channel range [1, 13] */
+  ESP_ERROR_CHECK(esp_wifi_set_country(&wifi_country));
   ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
   ESP_ERROR_CHECK(esp_wifi_start());
@@ -1355,78 +1313,55 @@ void wifi_sniffer_set_channel(uint8_t channel) {
 }
 
 const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type) {
-  switch (type) {
-    case WIFI_PKT_MGMT:
-      return "MGMT";
-    case WIFI_PKT_DATA:
-      return "DATA";
-    default:
-    case WIFI_PKT_MISC:
-      return "MISC";
-  }
+  return (type == WIFI_PKT_MGMT) ? "MGMT" : (type == WIFI_PKT_DATA) ? "DATA" : "MISC";
 }
 
 void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
-  static char message[256];  // Static buffer to avoid dynamic allocation
-
-  if (!snifferRunning)
-    return;  // Skip packet processing if sniffer is paused
-  if (type != WIFI_PKT_MGMT)
-    return;
+  if (!snifferRunning || type != WIFI_PKT_MGMT) return;
 
   const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
-  const wifi_ieee80211_packet_t *ipkt = (wifi_ieee80211_packet_t *)ppkt->payload;
-  const wifi_ieee80211_mac_hdr_t *hdr = &ipkt->hdr;
-
-  snprintf(message, sizeof(message),
-           "TYPE=%s CHAN=%d RSSI=%d A1=%02x:%02x:%02x:%02x:%02x:%02x",
-           wifi_sniffer_packet_type2str(type),
-           ppkt->rx_ctrl.channel,
-           ppkt->rx_ctrl.rssi,
-           hdr->addr1[0], hdr->addr1[1], hdr->addr1[2],
-           hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
+  const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
+  char message[128];
+  
+  snprintf(message, sizeof(message), "TYPE=%s CHAN=%d RSSI=%d A1=%02x:%02x:%02x:%02x:%02x:%02x",
+           wifi_sniffer_packet_type2str(type), ppkt->rx_ctrl.channel, ppkt->rx_ctrl.rssi,
+           hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
 
   Serial.println(message);
-  printOnDisplay(message);  // Print on the display
+  printOnDisplay(message);
 }
-// the loop function runs over and over again forever
+
 void initWifiSniffer() {
-  // Serial.begin(115200);
-  // delay(10);
-  // initDisplay(); // Initialize the display
   wifi_sniffer_init();
   pinMode(LED_GPIO_PIN, OUTPUT);
 }
 
 void runWifiSniffer() {
-  static bool snifferRunning = true;
   if (isButtonPressed(HOME_BUTTON_PIN)) {
     esp_wifi_set_promiscuous(false);
     currentState = STATE_MENU;
-    // Clean up WiFi sniffer if necessary
     drawMenu();
-    delay(500);  // Debounce delay
+    delay(500);
     return;
   }
+  
   if (isButtonPressed(SELECT_BUTTON_PIN)) {
     snifferRunning = !snifferRunning;
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println(snifferRunning ? "Sniffer Running" : "Sniffer Paused");
     display.display();
-    delay(500);  // Debounce delay
+    delay(500);
   }
 
   if (snifferRunning) {
-    wifi_sniffer_init();
-    vTaskDelay(WIFI_CHANNEL_SWITCH_INTERVAL / portTICK_PERIOD_MS);
     wifi_sniffer_set_channel(channel);
     channel = (channel % WIFI_CHANNEL_MAX) + 1;
+    vTaskDelay(WIFI_CHANNEL_SWITCH_INTERVAL / portTICK_PERIOD_MS);
   } else {
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Short delay when paused to prevent busy-waiting
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
-
 // START DEVIL TWIN //
 // DEVIL_TWIN VARIABLE SETUP //
 typedef struct
@@ -1912,6 +1847,14 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   display.println(title);
   display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
 
+  // Display info lines with proper spacing and truncation if needed
+  int maxTextWidth = 20;  // Approximate character limit per line for 128-pixel width
+
+  // Truncate lines if they exceed the max character count
+  if (info1.length() > maxTextWidth) info1 = info1.substring(0, maxTextWidth - 3) + "...";
+  if (info2.length() > maxTextWidth) info2 = info2.substring(0, maxTextWidth - 3) + "...";
+  if (info3.length() > maxTextWidth) info3 = info3.substring(0, maxTextWidth - 3) + "...";
+
   // Info lines
   display.setCursor(4, 18);
   display.println(info1);
@@ -1919,8 +1862,10 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   display.println(info2);
   display.setCursor(4, 38);
   display.println(info3);
+
   display.display();
 }
+
 void initRFID() {
   Serial.println("MFRC522 NFC Reader");
   displayInfo("MFRC522 NFC Reader", "Initializing...");
@@ -1936,7 +1881,8 @@ void initRFID() {
   displayInfo("Ready", "Waiting for card...", "Place card near", "the reader");
 }
 
-void runRFID() {
+
+void readRFID() {
   while (true) {
     // Check if HOME_BUTTON is pressed
     if (isButtonPressed(HOME_BUTTON_PIN)) {
@@ -1959,13 +1905,21 @@ void runRFID() {
       continue;
     }
 
+    // Construct UID string and truncate if necessary
     String uidString = "";
     for (uint8_t i = 0; i < mfrc522.uid.size; i++) {
       uidString += (mfrc522.uid.uidByte[i] < 0x10 ? "0" : "") + String(mfrc522.uid.uidByte[i], HEX) + " ";
     }
     uidString.trim();
+    if (uidString.length() > 20) uidString = uidString.substring(0, 17) + "...";
+
+    // Get and truncate card type if necessary
     String typeString = mfrc522.PICC_GetTypeName(mfrc522.PICC_GetType(mfrc522.uid.sak));
+    if (typeString.length() > 20) typeString = typeString.substring(0, 17) + "...";
+
+    // Display the card information
     displayInfo("Card Detected", "UID: " + uidString, "Type: " + typeString, "Size: " + String(mfrc522.uid.size) + " bytes");
+
     Serial.println("Found card:");
     Serial.println(" UID: " + uidString);
     Serial.println(" Type: " + typeString);
@@ -1977,6 +1931,7 @@ void runRFID() {
     mfrc522.PCD_StopCrypto1();
   }
 }
+
 // *** SYSTEM MODULES ***
 // MENU
 // LEDS SETUP
@@ -2200,7 +2155,7 @@ void executeSelectedMenuItem() {
       Serial.println("RFID button pressed");
       initRFID();
       delay(2000);
-      runRFID();
+      readRFID();
       break;
     case WARDRIVER:
       Serial.println("WARDRIVER button pressed");
