@@ -56,6 +56,7 @@ enum AppState {
   STATE_BT_HID,
   STATE_DEVIL_TWIN,
   STATE_RFID,
+  STATE_FILES,
   STATE_READ_BLOCKS,
   STATE_WARDRIVER,
 };
@@ -80,7 +81,6 @@ enum MenuItem {
   RFID,
   READ_BLOCKS,
   WARDRIVER,
-  // RF_SCAN,
   PARTY_LIGHT,
   LIGHTOFF,
   FILES,
@@ -115,7 +115,6 @@ enum RfidItem
 };
 */
 
-
 // volatile bool stopSniffer = false; // Flag to stop the sniffer
 volatile bool snifferRunning = true;
 const int MAX_VISIBLE_MENU_ITEMS = 3;  // Maximum number of items visible on the screen at a time
@@ -143,6 +142,23 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ80
 #define DOWN_BUTTON_PIN 35
 #define SELECT_BUTTON_PIN 15
 #define HOME_BUTTON_PIN 2
+
+//SD CARD Variables
+#define SD_CS 5
+#define SD_MOSI 23  // SD Card MOSI pin
+#define SD_MISO 19  // SD Card MISO pin
+#define SD_SCK 18   // SD Card SCK pin
+bool inMenu = true;
+bool inSDMenu = false;
+int currentMenuItem = 0;
+int currentSDMenuItem = 0;
+const int totalMenuItems = 5;
+int menuIndex = 0;    // Tracks the current menu option
+int SDmenuIndex = 0;  // Tracks the current menu option
+// Variables for file navigation
+String fileList[20];       // Array to store filenames
+int fileCount = 0;         // Number of files found
+int currentFileIndex = 0;  // Currently selected file
 
 // WIFI SETTINGS
 String SerialSSID = "";
@@ -189,7 +205,6 @@ int rssiSum;
 // TRIGGERS
 bool ap_active = false;
 
-
 // *** DISPLAY
 void initDisplay() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Address 0x3C for 128x64
@@ -210,6 +225,8 @@ void drawMenu() {
   display.setCursor(5, 4);                                             // Adjust as needed
   display.setTextSize(1);
   display.println("Home");  // Replace with dynamic title if needed
+
+  // Edit this to edit the menu items. Linked with AppState and MenuItem.
   const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "Devil Twin", "RFID Read", "RFID Read Blocks", "Wardriver",
                                              "Party Light", "Light Off", "Files", "Settings", "Help" };
   // Display the menu items in the blue area
@@ -251,7 +268,6 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   if (info1.length() > maxTextWidth) info1 = info1.substring(0, maxTextWidth - 3) + "...";
   if (info2.length() > maxTextWidth) info2 = info2.substring(0, maxTextWidth - 3) + "...";
   if (info3.length() > maxTextWidth) info3 = info3.substring(0, maxTextWidth - 3) + "...";
-
   // Info lines
   display.setCursor(4, 18);
   display.println(info1);
@@ -259,13 +275,11 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   display.println(info2);
   display.setCursor(4, 38);
   display.println(info3);
-
   display.display();
 }
 
 // *** BLUETOOTH MODULES ***
 //  BT SCANNER   //
-// Bluetooth Classic settings
 BluetoothSerial SerialBT;
 // BLE settings
 BLEScan *pBLEScan;
@@ -320,7 +334,6 @@ void runBTScan() {
     deviceList[i].rssi = device.getRSSI();
   }
   pBLEScan->clearResults();
-
   // Display loop for pages
   while (true) {
     display.clearDisplay();
@@ -329,7 +342,6 @@ void runBTScan() {
     display.setCursor(0, 0);
     display.print("Devices found: ");
     display.println(totalDevices);
-
     // Display devices on the current page
     for (int i = 0; i < devicesPerPage && i + currentPage * devicesPerPage < totalDevices; i++) {
       int index = i + currentPage * devicesPerPage;
@@ -339,7 +351,6 @@ void runBTScan() {
       display.println(deviceList[index].rssi);
     }
     display.display();
-
     // Wait for button press to change page
     unsigned long startTime = millis();
     while (millis() - startTime < 10000) {  // 10 seconds to view page
@@ -410,11 +421,9 @@ void handleCommand(String command) {
   u8g2_for_adafruit_gfx.setCursor(0, 0);
   u8g2_for_adafruit_gfx.print("Cmd: " + command);
   display.display();
-
   if (command.startsWith("WIFI ")) {
     int firstQuote = command.indexOf('"');
     int secondQuote = command.indexOf('"', firstQuote + 1);
-
     if (firstQuote != -1 && secondQuote != -1) {
       BTssid = command.substring(firstQuote + 1, secondQuote);
       SerialSSID = command.substring(firstQuote + 1, secondQuote);
@@ -480,7 +489,6 @@ void startWiFi() {
     display.display();
     return;
   }
-
   WiFi.begin(BTssid.c_str(), BTpassword.c_str());
   SerialBT.println("Connecting to WiFi...");
   Serial.println("Connecting to WiFi...");
@@ -488,7 +496,6 @@ void startWiFi() {
   u8g2_for_adafruit_gfx.setCursor(0, 0);
   u8g2_for_adafruit_gfx.print("Connecting...");
   display.display();
-
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {  // Maximum of 20 attempts
     delay(500);
@@ -535,7 +542,6 @@ void stopBluetooth() {
   u8g2_for_adafruit_gfx.print("BT stopped");
   display.display();
 }
-
 // END BT SERIAL COMMANDS //
 
 // BT HID START //
@@ -566,7 +572,6 @@ void runBTHid() {
     display.display();
     // URL to open
     const char *url = "https://youtu.be/oHg5SJYRHA0?si=bfXXjVeR5UyKoh4n";
-
     // Type the URL with a small delay between each character
     for (size_t i = 0; i < strlen(url); i++) {
       bleKeyboard.write(url[i]);
@@ -589,7 +594,6 @@ void runBTHid() {
 
     delay(1000);
   }
-
   Serial.println("Waiting 5 seconds to connect...");
   display.clearDisplay();
   display.setCursor(0, 0);
@@ -609,7 +613,6 @@ struct _Network {
   uint8_t encryptionType;
   uint8_t ch;
 };
-
 _Network _networks[16];  // Adjust size as needed
 void clearArray() {
   for (int i = 0; i < 16; ++i) {
@@ -620,8 +623,6 @@ void clearArray() {
     _networks[i].ch = 0;
   }
 }
-
-
 void performScan() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
@@ -670,30 +671,25 @@ void displayNetworkScan() {
   // Display the title
   u8g2_for_adafruit_gfx.setCursor(0, 10);
   u8g2_for_adafruit_gfx.print("Networks Found: " + totalNetworks);
-
   // Iterate through the _networks array and display each SSID
   for (int i = 0; i < networksPerPage; ++i) {
     int index = currentIndex + i;
     if (_networks[index].ssid == "") {
       break;  // Stop if there are no more networks
     }
-
     // Truncate the SSID if it's too long
     String ssid = _networks[index].ssid;
     if (ssid.length() > 10) {
       ssid = ssid.substring(0, 10) + "...";
     }
-
     // Set cursor position for each network (10 pixels per line)
     int y = 22 + (i * 10);
     u8g2_for_adafruit_gfx.setCursor(0, y);
     u8g2_for_adafruit_gfx.print(ssid);
-
     // Display RSSI
     u8g2_for_adafruit_gfx.setCursor(60, y);
     u8g2_for_adafruit_gfx.print(_networks[index].rssi);
     u8g2_for_adafruit_gfx.print(" dBm");
-
     // Display channel
     u8g2_for_adafruit_gfx.setCursor(95, y);
     u8g2_for_adafruit_gfx.print("CH:");
@@ -785,7 +781,6 @@ void startSoftAP() {
   delay(2000);
   Serial.print("SOFT AP IP address: ");
   Serial.println(IP);
-
   Serial.println("");
   Serial.println("WEB UI STARTED");
   Serial.print("IP address: ");
@@ -799,7 +794,6 @@ void startSoftAP() {
   u8g2_for_adafruit_gfx.setCursor(0, 40);
   u8g2_for_adafruit_gfx.print("IP: ");
   u8g2_for_adafruit_gfx.print(WiFi.localIP());
-
   // Start the web server
   server.on("/", handleRoot);
   server.begin();
@@ -846,7 +840,6 @@ void printOnDisplay(String message) {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-
   // Set the box coordinates and size
   /*int16_t x1, y1;
       uint16_t w, h;
@@ -865,7 +858,6 @@ void printOnDisplay(String message) {
       */
 }
 // ***PACKET MONITOR START*** //
-
 /* ===== functions ===== */
 double getMultiplicator() {
   uint32_t maxVal = 1;
@@ -878,16 +870,13 @@ double getMultiplicator() {
   else
     return 1;
 }
-
 void setChannel(int newChannel) {
   ch = newChannel;
   if (ch > MAX_CH || ch < 1)
     ch = 1;
-
   preferences.begin("packetmonitor32", false);
   preferences.putUInt("channel", ch);
   preferences.end();
-
   esp_wifi_set_promiscuous(false);
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
   esp_wifi_set_promiscuous_rx_cb(&wifi_promiscuous);
@@ -927,23 +916,18 @@ bool setupSD() {
 void wifi_promiscuous(void *buf, wifi_promiscuous_pkt_type_t type) {
   wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
   wifi_pkt_rx_ctrl_t ctrl = (wifi_pkt_rx_ctrl_t)pkt->rx_ctrl;
-
   if (type == WIFI_PKT_MGMT && (pkt->payload[0] == 0xA0 || pkt->payload[0] == 0xC0))
     deauths++;
-
   if (type == WIFI_PKT_MISC)
     return;  // wrong packet type
   if (ctrl.sig_len > SNAP_LEN)
     return;  // packet too long
-
   uint32_t packetLength = ctrl.sig_len;
   if (type == WIFI_PKT_MGMT)
     packetLength -= 4;  // fix for known bug in the IDF https://github.com/espressif/esp-idf/issues/886
-
   // Serial.print(".");
   tmpPacketCounter++;
   rssiSum += ctrl.rssi;
-
   if (useSD)
     sdBuffer.addPacket(pkt->payload, packetLength);
 }
@@ -953,26 +937,21 @@ void draw() {
   double multiplicator = getMultiplicator();
   int len;
   int rssi;
-
   if (pkts[MAX_X - 1] > 0)
     rssi = rssiSum / (int)pkts[MAX_X - 1];
   else
     rssi = rssiSum;
-
   display.fillScreen(SSD1306_BLACK);    // Clear the screen
   display.setTextColor(SSD1306_WHITE);  // Set text color to white
-
-  display.setCursor(0, 0);  // Set cursor position for left-aligned text
+  display.setCursor(0, 0);              // Set cursor position for left-aligned text
   display.print("CH:" + String(ch) + " ");
   display.setCursor(30, 0);  // Set cursor position for right-aligned text
   display.print("R:" + String(rssi));
   display.setCursor(65, 0);  // Set cursor position for right-aligned text
   display.print("P:[" + String(tmpPacketCounter) + "] " + "D:" + String(deauths));
   display.print(useSD ? "SD" : "");
-
   display.setCursor(95, 0);  // Set cursor position for left-aligned text
   // display.print("Pkts:");
-
   display.drawLine(0, 63 - MAX_Y, MAX_X, 63 - MAX_Y, SSD1306_WHITE);  // Add color to drawLine
   for (int i = 0; i < MAX_X; i++) {
     len = pkts[i] * multiplicator;
@@ -984,15 +963,9 @@ void draw() {
 #endif
 }
 void coreTask(void *p) {
-
   uint32_t currentTime;
-
   while (true) {
-
     currentTime = millis();
-
-    /* bit of spaghetti code, have to clean this up later :D */
-
     // check button
     if (digitalRead(BUTTON_PIN) == LOW) {
       if (buttonEnabled) {
@@ -1030,18 +1003,13 @@ void coreTask(void *p) {
     if (currentTime - lastDrawTime > 1000) {
       lastDrawTime = currentTime;
       // Serial.printf("\nFree RAM %u %u\n", heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT), heap_caps_get_minimum_free_size(MALLOC_CAP_32BIT));// for debug purposes
-
       pkts[MAX_X - 1] = tmpPacketCounter;
-
       draw();
-
       Serial.println((String)pkts[MAX_X - 1]);
-
       tmpPacketCounter = 0;
       deauths = 0;
       rssiSum = 0;
     }
-
     // Serial input
     if (Serial.available()) {
       ch = Serial.readString().toInt();
@@ -1070,16 +1038,12 @@ void initPacketMon() {
   ESP_ERROR_CHECK(esp_wifi_start());
 
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
-
   // SD card
   sdBuffer = Buffer();
-
   if (setupSD())
     sdBuffer.open(&SD_MMC);
-
   // I/O
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-
   // display
 #ifdef USE_DISPLAY
   // display.init();
@@ -1088,7 +1052,6 @@ void initPacketMon() {
     for (;;)
       ;
   }
-
   /*#ifdef FLIP_DISPLAY
     display.flipScreenVertically();
   #endif
@@ -1144,9 +1107,7 @@ void runPacketMon() {
 #define WIFI_CHANNEL_MAX (13)
 uint8_t channel = 1;
 //bool snifferRunning = true;
-
 static wifi_country_t wifi_country = { .cc = "CN", .schan = 1, .nchan = 13 };  // Country configuration
-
 typedef struct {
   unsigned frame_ctrl : 16;
   unsigned duration_id : 16;
@@ -1215,7 +1176,6 @@ void runWifiSniffer() {
     delay(500);
     return;
   }
-
   if (isButtonPressed(SELECT_BUTTON_PIN)) {
     snifferRunning = !snifferRunning;
     display.clearDisplay();
@@ -1224,7 +1184,6 @@ void runWifiSniffer() {
     display.display();
     delay(500);
   }
-
   if (snifferRunning) {
     wifi_sniffer_set_channel(channel);
     channel = (channel % WIFI_CHANNEL_MAX) + 1;
@@ -1581,7 +1540,6 @@ void scanWiFiNetworks() {
     Serial.println(" dBm)");
   }
 }
-
 // Write network data to the CSV file
 void writeNetworkData(int networkIndex) {
   String bssid = WiFi.BSSIDstr(networkIndex);
@@ -1598,7 +1556,6 @@ void writeNetworkData(int networkIndex) {
   String rcois = "";   // Placeholder if RCOIs is not available
   String mfgrid = "";  // Placeholder if Manufacturer ID is not available
   String type = "WiFi";
-
   // Write network data to CSV file
   csvFile.print("\"" + bssid + "\",");
   csvFile.print("\"" + ssid + "\",");
@@ -1673,12 +1630,10 @@ void runGPS() {
       delay(500);  // Debounce delay
       return;
     }
-
     // Read GPS data
     while (gpsSerial.available() > 0) {
       gps.encode(gpsSerial.read());
     }
-
     // Check if GPS data is valid
     if (gps.location.isValid() && gps.hdop.isValid() && gps.date.isValid() && gps.time.isValid() && gps.satellites.value() >= MIN_SATELLITES) {
       // Update RTC with GPS time
@@ -1718,8 +1673,6 @@ void initRFID() {
   String chipInfo = "Chip: MFRC522";
   displayInfo("MFRC522 Info", chipInfo, fwVersion);
 }
-
-
 void readRFID() {
   while (true) {
     // Check if HOME_BUTTON is pressed
@@ -1729,7 +1682,6 @@ void readRFID() {
       delay(500);  // Debounce delay
       return;
     }
-
     if (!mfrc522.PICC_IsNewCardPresent()) {
       static unsigned long lastUpdate = 0;
       if (millis() - lastUpdate > 5000) {
@@ -1738,7 +1690,6 @@ void readRFID() {
       }
       continue;
     }
-
     if (!mfrc522.PICC_ReadCardSerial()) {
       continue;
     }
@@ -1750,21 +1701,16 @@ void readRFID() {
     }
     uidString.trim();
     if (uidString.length() > 20) uidString = uidString.substring(0, 17) + "...";
-
     // Get and truncate card type if necessary
     String typeString = mfrc522.PICC_GetTypeName(mfrc522.PICC_GetType(mfrc522.uid.sak));
     if (typeString.length() > 20) typeString = typeString.substring(0, 17) + "...";
-
     // Display the card information
     displayInfo("Card Detected", "UID: " + uidString, "Type: " + typeString, "Size: " + String(mfrc522.uid.size) + " bytes");
-
     Serial.println("Found card:");
     Serial.println(" UID: " + uidString);
     Serial.println(" Type: " + typeString);
-
     delay(3000);
     displayInfo("Ready", "Waiting for card...", "Place card near", "the reader");
-
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
   }
@@ -1787,11 +1733,8 @@ void handleReadBlock() {
   unsigned long lastDebounceTime = 0;
   const unsigned long debounceDelay = 200;
   uint8_t blockAddr = 4;  // Default block to read
-
-
   while (true) {
     displayInfo("Read Block", "Place card and", "press UP to read", "HOME to exit");
-
     // Check for exit condition
     if (digitalRead(HOME_BUTTON_PIN) == LOW) {
       if (millis() - lastDebounceTime > debounceDelay) {
@@ -1803,7 +1746,6 @@ void handleReadBlock() {
         break;
       }
     }
-
     // Check for read trigger
     if (digitalRead(UP_BUTTON_PIN) == LOW) {
       if (millis() - lastDebounceTime > debounceDelay) {
@@ -1817,11 +1759,9 @@ void handleReadBlock() {
             display.setTextSize(1);
             display.setTextColor(SSD1306_WHITE);
             display.setCursor(0, 0);
-
             display.print("Block: ");
             display.println(blockAddr);
             display.println();  // Add a blank line for spacing
-
             String blockData = "";
             for (uint8_t i = 0; i < 16; i++) {
               blockData += (buffer[i] < 0x10 ? "0" : "") + String(buffer[i], HEX) + " ";
@@ -1865,10 +1805,354 @@ void handleReadBlock() {
       }
     }
   }
-
   // Wait for button release
   while (digitalRead(SELECT_BUTTON_PIN) == LOW) {
     delay(10);
+  }
+}
+
+// SD CARD START
+void initSDCard() {
+  displayInfo("SD Card", "Initializing...", "");
+  Serial.println("Beginning SD Card initialization...");
+
+  // Disable any existing SPI devices
+  digitalWrite(SD_CS, HIGH);
+  delay(100);
+
+  // Force SPI to known state
+  SPI.end();
+  delay(100);
+
+  // Initialize SPI with explicit settings
+  SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
+
+  // Begin SPI with forced pins
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  delay(100);
+
+  // Configure CS pin
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);
+  delay(100);
+
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  delay(3000);
+  // Try to initialize SD card
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD Card initialization failed!");
+    displayInfo("SD Error", "Init failed!", "Check connection");
+    delay(2000);
+    return;
+  }
+  // Get SD card info
+  uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE) {
+    Serial.println("No SD card attached!");
+    displayInfo("SD Error", "No card found!", "Check card");
+    delay(2000);
+    return;
+  }
+
+  // Print card type
+  String cardTypeStr = "Unknown";
+  switch (cardType) {
+    case CARD_MMC: cardTypeStr = "MMC"; break;
+    case CARD_SD: cardTypeStr = "SDSC"; break;
+    case CARD_SDHC: cardTypeStr = "SDHC"; break;
+    default: cardTypeStr = "Unknown"; break;
+  }
+  // Get card size
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+  // Display success and card info
+  String sizeStr = String(cardSize) + "MB";
+  displayInfo("SD Card OK", cardTypeStr, sizeStr);
+  delay(2000);
+  // Try to open root directory
+  File root = SD.open("/");
+  if (!root) {
+    Serial.println("Failed to open root directory");
+    displayInfo("SD Error", "Can't open root", "Format FAT32");
+    delay(2000);
+    return;
+  }
+  if (!root.isDirectory()) {
+    Serial.println("Root is not a directory");
+    displayInfo("SD Error", "Root invalid", "Format FAT32");
+    delay(2000);
+    return;
+  }
+
+  // Count files in root directory
+  int fileCount = 0;
+  while (true) {
+    File entry = root.openNextFile();
+    if (!entry) break;
+    fileCount++;
+    Serial.print("Found file: ");
+    Serial.println(entry.name());
+    entry.close();
+  }
+  root.close();
+  // Show file count
+  Serial.println("SD Ready");
+  Serial.print(String(fileCount));
+  Serial.print(" files found");
+  displayInfo("SD Ready", String(fileCount) + " files", "found");
+  delay(2000);
+}
+void sdCardMenu() {
+  static bool buttonPressed = false;
+
+  if (!buttonPressed) {
+    if (isButtonPressed(UP_BUTTON_PIN)) {
+      menuIndex = (menuIndex == 0) ? totalMenuItems - 1 : menuIndex - 1;
+      displaySDMenuOptions();  // Redraw menu to reflect the change
+      buttonPressed = true;
+      delay(100);  // Debounce delay
+    } else if (isButtonPressed(DOWN_BUTTON_PIN)) {
+      menuIndex = (menuIndex == totalMenuItems - 1) ? 0 : menuIndex + 1;
+      displaySDMenuOptions();  // Redraw menu to reflect the change
+      buttonPressed = true;
+      delay(100);  // Debounce delay
+    } else if (isButtonPressed(SELECT_BUTTON_PIN)) {
+      executeSDMenuAction(menuIndex);  // Execute the selected action
+      buttonPressed = true;
+      delay(100);  // Debounce delay
+    }
+  } else {
+    // Reset buttonPressed flag when no buttons are pressed
+    if (!isButtonPressed(UP_BUTTON_PIN) && !isButtonPressed(DOWN_BUTTON_PIN) && !isButtonPressed(SELECT_BUTTON_PIN)) {
+      buttonPressed = false;
+    }
+  }
+}
+const char *sdMenuOptions[] = {
+  "View Files",
+  "Delete Files",
+  "Load Data",
+  "Back to Main Menu"
+};
+
+/*
+void displayMenuOptions() {
+  displayInfo("SD Card Menu", sdMenuOptions[menuIndex]);
+}*/
+
+void displaySDMenuOptions() {
+  display.clearDisplay();
+  drawBorder();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(4, 4);
+  display.println("SD Card");
+  display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
+
+  // Calculate which items to show based on current selection
+  int startIdx = 0;
+  if (currentSDMenuItem > 2) {
+    startIdx = currentSDMenuItem - 2;
+  }
+  if (startIdx + 4 > totalMenuItems) {
+    startIdx = totalMenuItems - 4;
+  }
+  if (startIdx < 0) startIdx = 0;
+
+  // Display up to 4 menu items
+  for (int i = 0; i < 4 && (startIdx + i) < totalMenuItems; i++) {
+    display.setCursor(4, 18 + i * 10);
+    if (startIdx + i == currentSDMenuItem) {
+      display.print("> ");
+    } else {
+      display.print("  ");
+    }
+    display.println(sdMenuOptions[startIdx + i]);
+  }
+  // Optional: Add scroll indicators if there are more items
+  if (startIdx > 0) {
+    display.setCursor(120, 18);
+    display.print("^");
+  }
+  if (startIdx + 4 < totalMenuItems) {
+    display.setCursor(120, 48);
+    display.print("v");
+  }
+  display.display();
+}
+
+int getButtonInput() {
+  if (digitalRead(UP_BUTTON_PIN) == LOW) {
+    delay(200);                                                   // Debounce delay
+    if (digitalRead(UP_BUTTON_PIN) == LOW) return UP_BUTTON_PIN;  // Ensure it's still pressed
+  }
+
+  if (digitalRead(DOWN_BUTTON_PIN) == LOW) {
+    delay(200);  // Debounce delay
+    if (digitalRead(DOWN_BUTTON_PIN) == LOW) return DOWN_BUTTON_PIN;
+  }
+
+  if (digitalRead(SELECT_BUTTON_PIN) == LOW) {
+    delay(200);  // Debounce delay
+    if (digitalRead(SELECT_BUTTON_PIN) == LOW) return SELECT_BUTTON_PIN;
+  }
+
+  return 0;  // No button pressed
+}
+void executeSDMenuAction(int option) {
+  switch (option) {
+    case 0:
+      viewFiles();
+      break;
+    case 1:
+      deleteFile();
+      break;
+    case 2:
+      loadData();
+      break;
+    case 3:  // Back to main menu
+      inMenu = true;
+      inSDMenu = false;
+      drawMenu();
+      break;
+  }
+}
+
+void viewFiles() {
+  fileCount = 0;
+  currentFileIndex = 0;
+
+  File root = SD.open("/");
+  if (!root) {
+    Serial.println("Failed to open root directory");
+    displayInfo("SD Error", "Can't open root", "Check format");
+    delay(2000);
+    return;
+  }
+  if (!root.isDirectory()) {
+    root.close();
+    Serial.println("Root is not a directory");
+    displayInfo("SD Error", "Invalid root", "Check format");
+    delay(2000);
+    return;
+  }
+  Serial.println("Reading directory contents:");
+  // Populate fileList with file names on the SD card
+  while (true) {
+    File entry = root.openNextFile();
+    if (!entry) break;
+
+    if (!entry.isDirectory() && fileCount < 50) {
+      fileList[fileCount] = String(entry.name());
+      fileCount++;
+    }
+    entry.close();
+  }
+  root.close();
+  if (fileCount == 0) {
+    displayInfo("No Files", "SD card is", "empty");
+    delay(2000);
+    return;
+  }
+  // Enter file list view
+  bool inFileView = true;
+  while (inFileView) {
+    displayFileList();
+    int button = getButtonInput();
+    if (button == UP_BUTTON_PIN) {
+      currentFileIndex = (currentFileIndex == 0) ? fileCount - 1 : currentFileIndex - 1;
+      delay(150);  // Debounce delay
+    } else if (button == DOWN_BUTTON_PIN) {
+      currentFileIndex = (currentFileIndex == fileCount - 1) ? 0 : currentFileIndex + 1;
+      delay(150);  // Debounce delay
+    } else if (button == SELECT_BUTTON_PIN) {
+      inFileView = false;  // Exit file list view
+    }
+  }
+}
+
+void displayFileList() {
+  display.clearDisplay();
+  drawBorder();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  // Display title
+  display.setCursor(4, 4);
+  display.println("Files on SD Card");
+  display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
+  // Display files (3 at a time)
+  int startIndex = max(0, currentFileIndex - 1);
+  for (int i = 0; i < 3 && (startIndex + i) < fileCount; i++) {
+    display.setCursor(4, 18 + (i * 10));
+    if (startIndex + i == currentFileIndex) {
+      display.print("> ");
+    } else {
+      display.print("  ");
+    }
+    // Truncate filename if too long
+    String filename = fileList[startIndex + i];
+    if (filename.length() > 18) {
+      filename = filename.substring(0, 15) + "...";
+    }
+    display.println(filename);
+  }
+  // Display navigation hints
+  display.setCursor(4, 54);
+  display.println("UP/DOWN:Nav SELECT:Exit");
+  display.display();
+}
+
+void deleteFile() {
+  // First view and select file
+  viewFiles();
+  if (fileCount == 0) return;
+  // Confirm deletion
+  displayInfo("Delete File?", fileList[currentFileIndex], "SELECT:Yes UP:No");
+  while (true) {
+    if (digitalRead(SELECT_BUTTON_PIN) == LOW) {
+      delay(200);
+      if (SD.remove("/" + fileList[currentFileIndex])) {
+        displayInfo("Success", "File deleted", fileList[currentFileIndex]);
+      } else {
+        displayInfo("Error", "Could not", "delete file");
+      }
+      delay(2000);
+      break;
+    }
+    if (digitalRead(UP_BUTTON_PIN) == LOW) {
+      delay(200);
+      displayInfo("Cancelled", "File not", "deleted");
+      delay(2000);
+      break;
+    }
+  }
+}
+
+void loadData() {
+  // First view and select file
+  viewFiles();
+  if (fileCount == 0) return;
+  String selectedFile = fileList[currentFileIndex];
+  File dataFile = SD.open("/" + selectedFile);
+  if (dataFile) {
+    displayInfo("Loading", selectedFile, "Please wait...");
+    // Read file contents
+    String content = "";
+    while (dataFile.available()) {
+      char c = dataFile.read();
+      if (content.length() < 100) {  // Prevent buffer overflow
+        content += c;
+      }
+    }
+    dataFile.close();
+    // Display first part of file contents
+    displayInfo("File Contents", content.substring(0, 40), "SELECT:Exit");
+    while (digitalRead(SELECT_BUTTON_PIN) != LOW) {
+      delay(50);  // Wait for button press
+    }
+    delay(200);  // Debounce
+  } else {
+    displayInfo("Error", "Could not", "open file");
+    delay(2000);
   }
 }
 
@@ -1936,43 +2220,30 @@ bool isButtonPressed(uint8_t pin) {
   return false;
 }
 
-/**
- * Handles menu selection based on button presses.
- *
- * This function checks for button presses and updates the menu selection accordingly.
- * It also handles wrapping around the menu items and making the selected item visible.
- *
- * @return None
- */
 void handleMenuSelection() {
   static bool buttonPressed = false;
-
   if (!buttonPressed) {
     if (isButtonPressed(UP_BUTTON_PIN)) {
       // Wrap around if at the top
       selectedMenuItem = static_cast<MenuItem>((selectedMenuItem == 0) ? (NUM_MENU_ITEMS - 1) : (selectedMenuItem - 1));
-
       if (selectedMenuItem == (NUM_MENU_ITEMS - 1)) {
         // If wrapped to the bottom, make it visible
         firstVisibleMenuItem = NUM_MENU_ITEMS - 2;
       } else if (selectedMenuItem < firstVisibleMenuItem) {
         firstVisibleMenuItem = selectedMenuItem;
       }
-
       Serial.println("UP button pressed");
       drawMenu();
       buttonPressed = true;
     } else if (isButtonPressed(DOWN_BUTTON_PIN)) {
       // Wrap around if at the bottom
       selectedMenuItem = static_cast<MenuItem>((selectedMenuItem + 1) % NUM_MENU_ITEMS);
-
       if (selectedMenuItem == 0) {
         // If wrapped to the top, make it visible
         firstVisibleMenuItem = 0;
       } else if (selectedMenuItem >= (firstVisibleMenuItem + 2)) {
         firstVisibleMenuItem = selectedMenuItem - 1;
       }
-
       Serial.println("DOWN button pressed");
       drawMenu();
       buttonPressed = true;
@@ -2096,6 +2367,15 @@ void executeSelectedMenuItem() {
       currentState = STATE_WARDRIVER;
       runGPS();
       break;
+    case FILES:
+      Serial.println("FILES button pressed");
+      currentState = STATE_FILES;
+      inSDMenu = true;
+      inMenu = false;
+      currentSDMenuItem = 0;
+      displaySDMenuOptions();
+
+      break;
     case PARTY_LIGHT:
       Serial.println("PARTYLIGHT button pressed");
       partyLight();
@@ -2171,6 +2451,9 @@ void loop() {
     String command = Serial.readStringUntil('\n');
     command.trim();          // Remove any trailing newline or spaces
     handleCommand(command);  // Process the command
+  }
+  if (inSDMenu) {
+    sdCardMenu();
   }
   switch (currentState) {
     case STATE_MENU:
@@ -2303,8 +2586,61 @@ void loop() {
         return;
       }
       break;
-  }
-  if (serverRunning) {
-    server.handleClient();
+    case STATE_FILES:
+      {
+        static bool buttonPressed = false;
+        int button = getButtonInput();  // Get button input
+        //sdCardMenu();
+        if (!buttonPressed) {
+          if (isButtonPressed(HOME_BUTTON_PIN)) {
+            delay(200);  // Debounce delay
+            currentState = STATE_MENU;
+            menuIndex = 0;             // Reset to first item when returning home
+            firstVisibleMenuItem = 0;  // Reset first visible item
+            drawMenu();
+            buttonPressed = true;
+          } /*else if (isButtonPressed(UP_BUTTON_PIN)) {
+            // Wrap around if at the top, similar to handleMenuSelection()
+            menuIndex = (menuIndex == 0) ? totalMenuItems - 1 : menuIndex - 1;
+
+            // Adjust first visible item similar to handleMenuSelection()
+            if (menuIndex == (totalMenuItems - 1)) {
+              firstVisibleMenuItem = totalMenuItems - 2;
+            } else if (menuIndex < firstVisibleMenuItem) {
+              firstVisibleMenuItem = menuIndex;
+            }
+
+            displaySDMenuOptions();
+            buttonPressed = true;
+          } else if (isButtonPressed(DOWN_BUTTON_PIN)) {
+            // Wrap around if at the bottom
+            menuIndex = (menuIndex == totalMenuItems - 1) ? 0 : menuIndex + 1;
+
+            // Adjust first visible item
+            if (menuIndex == 0) {
+              firstVisibleMenuItem = 0;
+            } else if (menuIndex >= (firstVisibleMenuItem + 2)) {
+              firstVisibleMenuItem = menuIndex - 1;
+            }
+
+            displaySDMenuOptions();
+            buttonPressed = true;
+          } else if (isButtonPressed(SELECT_BUTTON_PIN)) {
+            executeSDMenuAction(menuIndex);  // Execute the selected action
+            buttonPressed = true;
+          }
+        } */
+          else {
+            // Reset buttonPressed flag when no buttons are pressed
+            if (!isButtonPressed(UP_BUTTON_PIN) && !isButtonPressed(DOWN_BUTTON_PIN) && !isButtonPressed(SELECT_BUTTON_PIN) && !isButtonPressed(HOME_BUTTON_PIN)) {
+              buttonPressed = false;
+            }
+          }
+          break;
+        }
+        if (serverRunning) {
+          server.handleClient();
+        }
+      }
   }
 }
