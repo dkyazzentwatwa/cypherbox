@@ -57,6 +57,7 @@ enum AppState {
   STATE_DEVIL_TWIN,
   STATE_RFID,
   STATE_FILES,
+  STATE_READ_FILES,
   STATE_READ_BLOCKS,
   STATE_WARDRIVER,
 };
@@ -84,6 +85,7 @@ enum MenuItem {
   PARTY_LIGHT,
   LIGHTOFF,
   FILES,
+  READ_FILES,
   // DEAUTH,
   SETTINGS,
   HELP,
@@ -205,6 +207,33 @@ int rssiSum;
 // TRIGGERS
 bool ap_active = false;
 
+//title screen images
+static const unsigned char PROGMEM image_EviSmile1_bits[] = { 0x30, 0x03, 0x00, 0x60, 0x01, 0x80, 0xe0, 0x01, 0xc0, 0xf3, 0xf3, 0xc0, 0xff, 0xff, 0xc0, 0xff, 0xff, 0xc0, 0x7f, 0xff, 0x80, 0x7f, 0xff, 0x80, 0x7f, 0xff, 0x80, 0xef, 0xfd, 0xc0, 0xe7, 0xf9, 0xc0, 0xe3, 0xf1, 0xc0, 0xe1, 0xe1, 0xc0, 0xf1, 0xe3, 0xc0, 0xff, 0xff, 0xc0, 0x7f, 0xff, 0x80, 0x7b, 0xf7, 0x80, 0x3d, 0x2f, 0x00, 0x1e, 0x1e, 0x00, 0x0f, 0xfc, 0x00, 0x03, 0xf0, 0x00 };
+static const unsigned char PROGMEM image_Ble_connected_bits[] = { 0x07, 0xc0, 0x1f, 0xf0, 0x3e, 0xf8, 0x7e, 0x7c, 0x76, 0xbc, 0xfa, 0xde, 0xfc, 0xbe, 0xfe, 0x7e, 0xfc, 0xbe, 0xfa, 0xde, 0x76, 0xbc, 0x7e, 0x7c, 0x3e, 0xf8, 0x1f, 0xf0, 0x07, 0xc0 };
+static const unsigned char PROGMEM image_MHz_bits[] = { 0xc3, 0x61, 0x80, 0x00, 0xe7, 0x61, 0x80, 0x00, 0xff, 0x61, 0x80, 0x00, 0xff, 0x61, 0xbf, 0x80, 0xdb, 0x7f, 0xbf, 0x80, 0xdb, 0x7f, 0x83, 0x00, 0xdb, 0x61, 0x86, 0x00, 0xc3, 0x61, 0x8c, 0x00, 0xc3, 0x61, 0x98, 0x00, 0xc3, 0x61, 0xbf, 0x80, 0xc3, 0x61, 0xbf, 0x80 };
+static const unsigned char PROGMEM image_Error_bits[] = { 0x03, 0xf0, 0x00, 0x0f, 0xfc, 0x00, 0x1f, 0xfe, 0x00, 0x3f, 0xff, 0x00, 0x73, 0xf3, 0x80, 0x71, 0xe3, 0x80, 0xf8, 0xc7, 0xc0, 0xfc, 0x0f, 0xc0, 0xfe, 0x1f, 0xc0, 0xfe, 0x1f, 0xc0, 0xfc, 0x0f, 0xc0, 0xf8, 0xc7, 0xc0, 0x71, 0xe3, 0x80, 0x73, 0xf3, 0x80, 0x3f, 0xff, 0x00, 0x1f, 0xfe, 0x00, 0x0f, 0xfc, 0x00, 0x03, 0xf0, 0x00 };
+static const unsigned char PROGMEM image_Bluetooth_Idle_bits[] = { 0x20, 0xb0, 0x68, 0x30, 0x30, 0x68, 0xb0, 0x20 };
+static const unsigned char PROGMEM image_off_text_bits[] = { 0x67, 0x70, 0x94, 0x40, 0x96, 0x60, 0x94, 0x40, 0x64, 0x40 };
+static const unsigned char PROGMEM image_wifi_not_connected_bits[] = { 0x21, 0xf0, 0x00, 0x16, 0x0c, 0x00, 0x08, 0x03, 0x00, 0x25, 0xf0, 0x80, 0x42, 0x0c, 0x40, 0x89, 0x02, 0x20, 0x10, 0xa1, 0x00, 0x23, 0x58, 0x80, 0x04, 0x24, 0x00, 0x08, 0x52, 0x00, 0x01, 0xa8, 0x00, 0x02, 0x04, 0x00, 0x00, 0x42, 0x00, 0x00, 0xa1, 0x00, 0x00, 0x40, 0x80, 0x00, 0x00, 0x00 };
+static const unsigned char PROGMEM image_volume_muted_bits[] = { 0x01, 0xc0, 0x00, 0x02, 0x40, 0x00, 0x04, 0x40, 0x00, 0x08, 0x40, 0x00, 0xf0, 0x50, 0x40, 0x80, 0x48, 0x80, 0x80, 0x45, 0x00, 0x80, 0x42, 0x00, 0x80, 0x45, 0x00, 0x80, 0x48, 0x80, 0xf0, 0x50, 0x40, 0x08, 0x40, 0x00, 0x04, 0x40, 0x00, 0x02, 0x40, 0x00, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00 };
+static const unsigned char PROGMEM image_network_not_connected_bits[] = { 0x82, 0x0e, 0x44, 0x0a, 0x28, 0x0a, 0x10, 0x0a, 0x28, 0xea, 0x44, 0xaa, 0x82, 0xaa, 0x00, 0xaa, 0x0e, 0xaa, 0x0a, 0xaa, 0x0a, 0xaa, 0x0a, 0xaa, 0xea, 0xaa, 0xaa, 0xaa, 0xee, 0xee, 0x00, 0x00 };
+static const unsigned char PROGMEM image_microphone_muted_bits[] = { 0x87, 0x00, 0x4f, 0x80, 0x26, 0x80, 0x13, 0x80, 0x09, 0x80, 0x04, 0x80, 0x0a, 0x00, 0x0d, 0x00, 0x2e, 0xa0, 0x27, 0x40, 0x10, 0x20, 0x0f, 0x90, 0x02, 0x08, 0x02, 0x04, 0x0f, 0x82, 0x00, 0x00 };
+static const unsigned char PROGMEM image_cross_contour_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x80, 0x51, 0x40, 0x8a, 0x20, 0x44, 0x40, 0x20, 0x80, 0x11, 0x00, 0x20, 0x80, 0x44, 0x40, 0x8a, 0x20, 0x51, 0x40, 0x20, 0x80, 0x00, 0x00, 0x00, 0x00 };
+static const unsigned char PROGMEM image_mute_text_bits[] = { 0x8a, 0x5d, 0xe0, 0xda, 0x49, 0x00, 0xaa, 0x49, 0xc0, 0x8a, 0x49, 0x00, 0x89, 0x89, 0xe0 };
+//loading images
+static const unsigned char PROGMEM image_LoadingHourglass_bits[] = { 0x00, 0x00, 0x00, 0x07, 0xff, 0xf0, 0x04, 0x00, 0x10, 0x03, 0xff, 0xe0, 0x01, 0x00, 0x40, 0x01, 0x55, 0x40, 0x01, 0x2a, 0x40, 0x01, 0x14, 0x40, 0x00, 0x88, 0x80, 0x00, 0x41, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x14, 0x00, 0x00, 0x14, 0x00, 0x00, 0x22, 0x00, 0x00, 0x49, 0x00, 0x00, 0x80, 0x80, 0x01, 0x00, 0x40, 0x01, 0x00, 0x40, 0x01, 0x00, 0x40, 0x01, 0x00, 0x40, 0x03, 0xff, 0xe0, 0x04, 0x00, 0x10, 0x07, 0xff, 0xf0, 0x00, 0x00, 0x00 };
+static const unsigned char PROGMEM image_hourglass4_bits[] = { 0x00, 0x40, 0x00, 0x00, 0xe0, 0x00, 0x01, 0x40, 0x00, 0x02, 0xa0, 0x00, 0x05, 0x10, 0x00, 0x0a, 0x08, 0x00, 0x14, 0x08, 0x00, 0x28, 0x08, 0x00, 0x50, 0x08, 0x00, 0xe0, 0x08, 0x00, 0x50, 0x08, 0x00, 0x08, 0x07, 0xe0, 0x07, 0xe0, 0x10, 0x00, 0x14, 0x0a, 0x00, 0x17, 0xe7, 0x00, 0x17, 0xca, 0x00, 0x17, 0x94, 0x00, 0x17, 0x28, 0x00, 0x12, 0x50, 0x00, 0x08, 0xa0, 0x00, 0x05, 0x40, 0x00, 0x02, 0x80, 0x00, 0x07, 0x00, 0x00, 0x02, 0x00 };
+static const unsigned char PROGMEM image_hourglass5_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x00, 0x06, 0x50, 0x00, 0x0a, 0x5f, 0x00, 0xfa, 0x50, 0x81, 0x0a, 0x50, 0x42, 0x0a, 0x50, 0x24, 0x0a, 0x50, 0x18, 0x7a, 0x50, 0x03, 0xfa, 0x50, 0x19, 0xfa, 0x50, 0x24, 0xfa, 0x50, 0x42, 0x7a, 0x50, 0x81, 0x0a, 0x5f, 0x00, 0xfa, 0x50, 0x00, 0x0a, 0x60, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+static const unsigned char PROGMEM image_hourglass6_bits[] = { 0x00, 0x02, 0x00, 0x00, 0x07, 0x00, 0x00, 0x02, 0x80, 0x00, 0x05, 0x40, 0x00, 0x08, 0xa0, 0x00, 0x10, 0x50, 0x00, 0x10, 0x28, 0x00, 0x13, 0x94, 0x00, 0x17, 0xca, 0x00, 0x17, 0xe7, 0x00, 0x17, 0xca, 0x07, 0xe0, 0x10, 0x08, 0x07, 0xe0, 0x50, 0x08, 0x00, 0xe0, 0x08, 0x00, 0x50, 0x08, 0x00, 0x28, 0x08, 0x00, 0x14, 0x08, 0x00, 0x0a, 0x08, 0x00, 0x05, 0x10, 0x00, 0x02, 0xa0, 0x00, 0x01, 0x40, 0x00, 0x00, 0xe0, 0x00, 0x00, 0x40, 0x00 };
+static const unsigned char PROGMEM image_bluetooth_not_connected_bits[] = { 0x02, 0x00, 0x83, 0x00, 0x42, 0x80, 0x22, 0x40, 0x12, 0x20, 0x08, 0x20, 0x04, 0x40, 0x02, 0x00, 0x05, 0x00, 0x0a, 0x80, 0x12, 0x40, 0x22, 0x20, 0x02, 0x50, 0x02, 0x88, 0x01, 0x04, 0x00, 0x00 };
+
+void nonBlockingDelay(unsigned long ms) {
+  unsigned long start = millis();
+  while (millis() - start < ms) {
+    // Allow ESP32 to handle background processes
+    yield();  // Very important!
+  }
+}
 // *** DISPLAY
 void initDisplay() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Address 0x3C for 128x64
@@ -212,8 +241,6 @@ void initDisplay() {
     for (;;)
       ;
   }
-  display.display();
-  delay(2000);
   display.clearDisplay();
 }
 
@@ -228,7 +255,7 @@ void drawMenu() {
 
   // Edit this to edit the menu items. Linked with AppState and MenuItem.
   const char *menuLabels[NUM_MENU_ITEMS] = { "Packet Monitor", "Wifi Sniff", "AP Scan", "AP Join", "AP Create", "Stop AP", "Stop Server", "BT Scan", "BT Create", "BT Ser. CMD", "BT HID", "Devil Twin", "RFID Read", "RFID Read Blocks", "Wardriver",
-                                             "Party Light", "Light Off", "Files", "Settings", "Help" };
+                                             "Party Light", "Light Off", "View Files", "Read Files", "Settings", "Help" };
   // Display the menu items in the blue area
   display.setTextColor(SSD1306_WHITE);  // White text in blue area
   for (int i = 0; i < 2; i++) {         // Only show 2 menu items at a time
@@ -278,6 +305,69 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   display.display();
 }
 
+void displayTitleScreen3() {
+  display.clearDisplay();
+  display.setTextWrap(false);
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_6x10_mr);
+  u8g2_for_adafruit_gfx.setCursor(6, 7);
+  u8g2_for_adafruit_gfx.print("little hakr presents");
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_4x6_tn);
+  u8g2_for_adafruit_gfx.setCursor(0, 14);
+  u8g2_for_adafruit_gfx.print("------------------------------------------------------");
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_6x12_me);
+  u8g2_for_adafruit_gfx.setCursor(29, 50);
+  u8g2_for_adafruit_gfx.print("C y p h e r");
+  u8g2_for_adafruit_gfx.setCursor(48, 61);
+  u8g2_for_adafruit_gfx.print("B O X");
+  display.drawBitmap(109, 22, image_Ble_connected_bits, 15, 15, 1);
+  display.drawBitmap(2, 50, image_MHz_bits, 25, 11, 1);
+  display.drawBitmap(92, 23, image_off_text_bits, 12, 5, 1);
+  display.drawBitmap(4, 31, image_volume_muted_bits, 18, 16, 1);
+  display.drawBitmap(22, 21, image_bluetooth_not_connected_bits, 14, 16, 1);
+  display.drawBitmap(109, 45, image_network_not_connected_bits, 15, 16, 1);
+  display.drawBitmap(96, 33, image_microphone_muted_bits, 15, 16, 1);
+  display.drawBitmap(67, 21, image_cross_contour_bits, 11, 16, 1);
+  display.drawBitmap(42, 29, image_mute_text_bits, 19, 5, 1);
+  display.display();
+}
+void loadingScreen() {
+  display.clearDisplay();
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
+  display.drawBitmap(0, 38, image_LoadingHourglass_bits, 24, 24, 1);
+  display.setTextWrap(false);
+  u8g2_for_adafruit_gfx.setCursor(16, 29);
+  u8g2_for_adafruit_gfx.print("l o a d i n g . .");
+  display.drawBitmap(30, 37, image_hourglass4_bits, 24, 24, 1);
+  display.drawBitmap(63, 37, image_hourglass5_bits, 24, 24, 1);
+  display.drawBitmap(98, 37, image_hourglass6_bits, 24, 24, 1);
+  display.display();
+}
+
+void itemLoadingScreen(const String &Text) {
+  display.clearDisplay();
+
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
+  display.drawBitmap(0, 38, image_LoadingHourglass_bits, 24, 24, 1);
+
+  display.setTextWrap(false);
+  u8g2_for_adafruit_gfx.setCursor(15, 31);
+  u8g2_for_adafruit_gfx.print("l o a d i n g . .");
+
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set back to small font
+
+  // Set cursor for Bluetooth text without changing the position
+  u8g2_for_adafruit_gfx.setCursor(0, 5);
+  u8g2_for_adafruit_gfx.print(Text);  // Print the passed Bluetooth text
+
+  // Draw hourglass images
+  display.drawBitmap(30, 37, image_hourglass4_bits, 24, 24, 1);
+  display.drawBitmap(63, 37, image_hourglass5_bits, 24, 24, 1);
+  display.drawBitmap(98, 37, image_hourglass6_bits, 24, 24, 1);
+
+  display.display();
+  //nonBlockingDelay(2000);
+}
+
 // *** BLUETOOTH MODULES ***
 //  BT SCANNER   //
 BluetoothSerial SerialBT;
@@ -290,10 +380,11 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     String deviceInfo = String("BLE Device found: ") + advertisedDevice.toString().c_str();
     Serial.println(deviceInfo);
     display.println(deviceInfo);
-    delay(200);
+    nonBlockingDelay(200);
   }
 };
 void initBTScan() {
+  itemLoadingScreen("-->bluetooth scan");
   // Initialize BLE
   BLEDevice::init("");
   pBLEScan = BLEDevice::getScan();  // Create new scan
@@ -301,12 +392,7 @@ void initBTScan() {
   pBLEScan->setActiveScan(true);  // Active scan uses more power, but gets results faster
   pBLEScan->setInterval(100);
   pBLEScan->setWindow(99);  // Less or equal setInterval value
-  display.clearDisplay();
-  u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
-  u8g2_for_adafruit_gfx.setCursor(20, 40);                 // Centered vertically
-  u8g2_for_adafruit_gfx.print("LOADING...");
-  display.display();
-  delay(2000);
+  //nonBlockingDelay(2000);
 }
 
 // Structure to store minimal device info
@@ -347,7 +433,7 @@ void runBTScan() {
       int index = i + currentPage * devicesPerPage;
       display.setCursor(0, (i + 1) * 10);
       display.print(deviceList[index].address);
-      display.print(" RSSI: ");
+      display.print(" R: ");
       display.println(deviceList[index].rssi);
     }
     display.display();
@@ -356,10 +442,10 @@ void runBTScan() {
     while (millis() - startTime < 10000) {  // 10 seconds to view page
       if (isButtonPressed(SELECT_BUTTON_PIN)) {
         currentPage = (currentPage + 1) % ((totalDevices + devicesPerPage - 1) / devicesPerPage);
-        delay(200);  // Simple debounce
+        nonBlockingDelay(200);  // Simple debounce
         break;
       }
-      delay(50);
+      nonBlockingDelay(50);
     }
   }
 }
@@ -383,8 +469,7 @@ String BTssid = "";
 String BTpassword = "";
 void initBTSerialDisplay() {
   display.clearDisplay();
-  u8g2_for_adafruit_gfx.begin(display);
-  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
+  itemLoadingScreen("-->bluetooth scan");
   const char *commands[] = {
     "BT SERIAL CMDS",
     "Connect Serial Term.",
@@ -399,6 +484,8 @@ void initBTSerialDisplay() {
 }
 
 void initBTSerial() {
+  itemLoadingScreen("-->bluetooth serial");
+
   // Initialize Bluetooth
   if (!SerialBT.begin("cypherboxBT")) {
     Serial.println("An error occurred initializing Bluetooth");
@@ -498,7 +585,7 @@ void startWiFi() {
   display.display();
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {  // Maximum of 20 attempts
-    delay(500);
+    nonBlockingDelay(500);
     SerialBT.print(".");
     Serial.print(".");
     attempts++;
@@ -547,9 +634,11 @@ void stopBluetooth() {
 // BT HID START //
 
 void initBTHid() {
+  itemLoadingScreen("-->bluetooth HID");
+
   bleKeyboard.begin();
   Serial.println("Bluetooth HID initialized");
-  delay(3000);
+  nonBlockingDelay(3000);
 }
 
 void runBTHid() {
@@ -560,11 +649,11 @@ void runBTHid() {
     display.setCursor(0, 0);
     display.println("Starting Rick Roll Hack....!!!");
     Serial.println("Starting Rick Roll Hack....!!!");
-    delay(1000);
+    nonBlockingDelay(1000);
     display.display();
     // Open browser home page
     bleKeyboard.write(KEY_MEDIA_WWW_HOME);
-    delay(6000);
+    nonBlockingDelay(6000);
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Opening Rick Roll Hack....");
@@ -572,34 +661,34 @@ void runBTHid() {
     display.display();
     // URL to open
     const char *url = "https://youtu.be/oHg5SJYRHA0?si=bfXXjVeR5UyKoh4n";
-    // Type the URL with a small delay between each character
+    // Type the URL with a small nonBlockingDelay between each character
     for (size_t i = 0; i < strlen(url); i++) {
       bleKeyboard.write(url[i]);
-      delay(50);  // Adjust this delay if needed
+      nonBlockingDelay(50);  // Adjust this nonBlockingDelay if needed
     }
-    delay(500);  // Small delay before pressing enter
+    nonBlockingDelay(500);  // Small nonBlockingDelay before pressing enter
     bleKeyboard.press(KEY_RETURN);
     bleKeyboard.releaseAll();
-    delay(10000);  // Adjust this delay according to Chrome's load time
+    nonBlockingDelay(10000);  // Adjust this nonBlockingDelay according to Chrome's load time
     display.setCursor(0, 12);
     display.println("Hack complete....!");
     Serial.println("Hack complete....!");
     display.display();
-    delay(1000);
+    nonBlockingDelay(1000);
     display.setCursor(0, 24);
     display.println("BT HID Complete....");
     Serial.println("BT HID Complete....");
-    delay(2000);
+    nonBlockingDelay(2000);
     display.display();
 
-    delay(1000);
+    nonBlockingDelay(1000);
   }
   Serial.println("Waiting 5 seconds to connect...");
   display.clearDisplay();
   display.setCursor(0, 0);
   display.println("Waiting 5 seconds to connect...");
   display.display();
-  delay(5000);
+  nonBlockingDelay(5000);
 }
 // END BT HID //
 
@@ -625,10 +714,7 @@ void clearArray() {
 }
 void performScan() {
   display.clearDisplay();
-  u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
-  u8g2_for_adafruit_gfx.setCursor(20, 40);                 // Centered vertically
-  u8g2_for_adafruit_gfx.print("LOADING...");
-  display.display();
+  itemLoadingScreen("-->starting AP scan");
   int n = WiFi.scanNetworks();
   totalNetworks = WiFi.scanNetworks();
   clearArray();
@@ -730,7 +816,7 @@ void startServer() {
   u8g2_for_adafruit_gfx.print(ssid);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    nonBlockingDelay(500);
     Serial.print(".");
     u8g2_for_adafruit_gfx.setCursor(0, 20);
     u8g2_for_adafruit_gfx.print(ssid);
@@ -778,7 +864,7 @@ void startSoftAP() {
   u8g2_for_adafruit_gfx.print(ssid);
   WiFi.softAP(softAP, softPass);
   IPAddress IP = WiFi.softAPIP();
-  delay(2000);
+  nonBlockingDelay(2000);
   Serial.print("SOFT AP IP address: ");
   Serial.println(IP);
   Serial.println("");
@@ -1021,6 +1107,7 @@ void coreTask(void *p) {
 }
 
 void initPacketMon() {
+  itemLoadingScreen("-->packet monitor");
   // Settings
   preferences.begin("packetmonitor32", false);
   ch = preferences.getUInt("channel", 1);
@@ -1070,7 +1157,7 @@ void initPacketMon() {
   display.print("@Spacehuhn");
   display.display();
 
-  delay(1000);
+  nonBlockingDelay(1000);
 #endif
 
   // second core
@@ -1092,7 +1179,7 @@ void runPacketMon() {
     if (isButtonPressed(HOME_BUTTON_PIN)) {
       currentState = STATE_MENU;
       drawMenu();
-      delay(500);  // Debounce delay
+      nonBlockingDelay(500);  // Debounce nonBlockingDelay
       return;
     }
 
@@ -1149,21 +1236,39 @@ const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type) {
 }
 
 void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
-  if (!snifferRunning || type != WIFI_PKT_MGMT) return;
-
-  const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
-  const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
-  char message[128];
-
-  snprintf(message, sizeof(message), "TYPE=%s CHAN=%d RSSI=%d A1=%02x:%02x:%02x:%02x:%02x:%02x",
-           wifi_sniffer_packet_type2str(type), ppkt->rx_ctrl.channel, ppkt->rx_ctrl.rssi,
-           hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
-
-  Serial.println(message);
-  printOnDisplay(message);
+ if (!snifferRunning || type != WIFI_PKT_MGMT) return;
+ 
+ const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
+ const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
+ 
+ char message1[64];  // First line
+ char message2[64];  // Second line
+ 
+ // Split the message into two lines
+ snprintf(message1, sizeof(message1), "TYPE=%s CHAN=%d RSSI=%d", 
+   wifi_sniffer_packet_type2str(type), 
+   ppkt->rx_ctrl.channel, 
+   ppkt->rx_ctrl.rssi);
+ 
+ snprintf(message2, sizeof(message2), "A1=%02x:%02x:%02x:%02x:%02x:%02x",
+   hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], 
+   hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
+ 
+ Serial.println(message1);
+ Serial.println(message2);
+ 
+ display.clearDisplay();
+ display.setTextSize(1);
+ display.setTextColor(SSD1306_WHITE);
+ display.setCursor(0, 0);
+ display.println(message1);
+ display.setCursor(0, 10);  // Move to next line (adjust based on text size)
+ display.println(message2);
+ display.display();
 }
 
 void initWifiSniffer() {
+  itemLoadingScreen("-->wifi sniffer");
   wifi_sniffer_init();
   pinMode(LED_GPIO_PIN, OUTPUT);
 }
@@ -1173,7 +1278,7 @@ void runWifiSniffer() {
     esp_wifi_set_promiscuous(false);
     currentState = STATE_MENU;
     drawMenu();
-    delay(500);
+    nonBlockingDelay(500);
     return;
   }
   if (isButtonPressed(SELECT_BUTTON_PIN)) {
@@ -1182,7 +1287,7 @@ void runWifiSniffer() {
     display.setCursor(0, 0);
     display.println(snifferRunning ? "Sniffer Running" : "Sniffer Paused");
     display.display();
-    delay(500);
+    nonBlockingDelay(500);
   }
   if (snifferRunning) {
     wifi_sniffer_set_channel(channel);
@@ -1381,6 +1486,7 @@ void handleIndex() {
 void initDevilTwin() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);
+  itemLoadingScreen("-->devil twin");
   u8g2_for_adafruit_gfx.setCursor(0, 10);
   u8g2_for_adafruit_gfx.print("DEVIL WIFI TWIN ");
   u8g2_for_adafruit_gfx.setCursor(0, 30);
@@ -1391,14 +1497,14 @@ void initDevilTwin() {
   u8g2_for_adafruit_gfx.print("PW - 12345678 ");
   display.display();
   WiFi.mode(WIFI_AP_STA);
-  delay(3000);
+  nonBlockingDelay(3000);
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
   WiFi.softAP("CypherTwin", "12345678");
-  delay(3000);
+  nonBlockingDelay(3000);
   dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
-  delay(3000);
+  nonBlockingDelay(3000);
   performDevilScan();  // Add this line to perform the network scan
-  delay(3000);
+  nonBlockingDelay(3000);
   Serial.println("scan complete");
   webServer.on("/", handleIndex);
   webServer.on("/result", handleResult);
@@ -1408,7 +1514,7 @@ void initDevilTwin() {
   webServer.begin();
   Serial.println("webserver begin, initdeviltwin done!");
 
-  delay(3000);
+  nonBlockingDelay(3000);
 }
 void runDevilTwin() {
   Serial.println("runDevilTwin() strarting");
@@ -1417,12 +1523,12 @@ void runDevilTwin() {
     if (isButtonPressed(HOME_BUTTON_PIN)) {
       currentState = STATE_MENU;
       drawMenu();
-      delay(500);  // Debounce delay
+      nonBlockingDelay(500);  // Debounce nonBlockingDelay
       return;
     }
     webServer.handleClient();
     dnsServer.processNextRequest();
-    delay(10);
+    nonBlockingDelay(10);
   }
 }
 
@@ -1591,7 +1697,7 @@ void initGPS() {
   display.clearDisplay();
   displayInfo("Loading GPS", "Initializing...");
   gpsSerial.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin);  // Start GPS serial communication
-  delay(5000);                                         // Allow time for the system to stabilize
+  nonBlockingDelay(5000);                              // Allow time for the system to stabilize
   Serial.print("GPS loaded.");
   // Initialize OLED display
   // Initialize SD card
@@ -1604,7 +1710,7 @@ void initGPS() {
       break
   }
 
-  // delay(4000);
+  // nonBlockingDelay(4000);
   //  Initialize CSV file
   if (!initializeCSV())
   {
@@ -1614,11 +1720,11 @@ void initGPS() {
   {
     Serial.println("CSV Initialization done.");
   }
-  delay(3000);
+  nonBlockingDelay(3000);
   */
 
   rtc.begin(DateTime(F(__DATE__), F(__TIME__)));  // Initialize RTC with compile time
-  displayInfo("GPS Loaded", "Wardriver Activated...");
+  displayInfo("GPS OK...", "Wardriver OK...");
 }
 
 void runGPS() {
@@ -1627,7 +1733,7 @@ void runGPS() {
     if (isButtonPressed(HOME_BUTTON_PIN)) {
       currentState = STATE_MENU;
       drawMenu();
-      delay(500);  // Debounce delay
+      nonBlockingDelay(500);  // Debounce nonBlockingDelay
       return;
     }
     // Read GPS data
@@ -1644,7 +1750,7 @@ void runGPS() {
       displayGPSData();
       scanWiFiNetworks();
       displayGPSData();
-      delay(15000);  // Wait 15 seconds before next scan
+      nonBlockingDelay(15000);  // Wait 15 seconds before next scan
     } else {
       displaySearching();
     }
@@ -1665,9 +1771,9 @@ void initRFID() {
   Serial.println("MFRC522 NFC Reader");
   displayInfo("MFRC522 NFC Reader", "Initializing...");
   SPI.begin();
-  delay(2000);
+  nonBlockingDelay(2000);
   mfrc522.PCD_Init();
-  delay(2000);
+  nonBlockingDelay(2000);
   mfrc522.PCD_DumpVersionToSerial();
   String fwVersion = "FW: " + String(mfrc522.PCD_ReadRegister(mfrc522.VersionReg), HEX);
   String chipInfo = "Chip: MFRC522";
@@ -1679,7 +1785,7 @@ void readRFID() {
     if (isButtonPressed(HOME_BUTTON_PIN)) {
       currentState = STATE_MENU;
       drawMenu();
-      delay(500);  // Debounce delay
+      nonBlockingDelay(500);  // Debounce nonBlockingDelay
       return;
     }
     if (!mfrc522.PICC_IsNewCardPresent()) {
@@ -1709,7 +1815,7 @@ void readRFID() {
     Serial.println("Found card:");
     Serial.println(" UID: " + uidString);
     Serial.println(" Type: " + typeString);
-    delay(3000);
+    nonBlockingDelay(3000);
     displayInfo("Ready", "Waiting for card...", "Place card near", "the reader");
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
@@ -1739,10 +1845,10 @@ void handleReadBlock() {
     if (digitalRead(HOME_BUTTON_PIN) == LOW) {
       if (millis() - lastDebounceTime > debounceDelay) {
         lastDebounceTime = millis();
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         break;
       }
     }
@@ -1781,7 +1887,7 @@ void handleReadBlock() {
             display.print("Press HOME to exit");
 
             display.display();  // Send the buffer to the display
-            delay(5000);
+            nonBlockingDelay(5000);
           } else {
             display.clearDisplay();
             display.setTextSize(1);
@@ -1797,7 +1903,7 @@ void handleReadBlock() {
             display.print("Press SELECT to exit");
 
             display.display();  // Send the buffer to the display
-            delay(2000);
+            nonBlockingDelay(2000);
           }
           mfrc522.PICC_HaltA();
           mfrc522.PCD_StopCrypto1();
@@ -1807,7 +1913,7 @@ void handleReadBlock() {
   }
   // Wait for button release
   while (digitalRead(SELECT_BUTTON_PIN) == LOW) {
-    delay(10);
+    nonBlockingDelay(10);
   }
 }
 
@@ -1818,31 +1924,31 @@ void initSDCard() {
 
   // Disable any existing SPI devices
   digitalWrite(SD_CS, HIGH);
-  delay(100);
+  nonBlockingDelay(100);
 
   // Force SPI to known state
   SPI.end();
-  delay(100);
+  nonBlockingDelay(100);
 
   // Initialize SPI with explicit settings
   SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
 
   // Begin SPI with forced pins
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  delay(100);
+  nonBlockingDelay(100);
 
   // Configure CS pin
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_CS, HIGH);
-  delay(100);
+  nonBlockingDelay(100);
 
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  delay(3000);
+  nonBlockingDelay(3000);
   // Try to initialize SD card
   if (!SD.begin(SD_CS)) {
     Serial.println("SD Card initialization failed!");
     displayInfo("SD Error", "Init failed!", "Check connection");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
   // Get SD card info
@@ -1850,7 +1956,7 @@ void initSDCard() {
   if (cardType == CARD_NONE) {
     Serial.println("No SD card attached!");
     displayInfo("SD Error", "No card found!", "Check card");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
 
@@ -1867,19 +1973,19 @@ void initSDCard() {
   // Display success and card info
   String sizeStr = String(cardSize) + "MB";
   displayInfo("SD Card OK", cardTypeStr, sizeStr);
-  delay(2000);
+  nonBlockingDelay(2000);
   // Try to open root directory
   File root = SD.open("/");
   if (!root) {
     Serial.println("Failed to open root directory");
     displayInfo("SD Error", "Can't open root", "Format FAT32");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
   if (!root.isDirectory()) {
     Serial.println("Root is not a directory");
     displayInfo("SD Error", "Root invalid", "Format FAT32");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
 
@@ -1899,7 +2005,7 @@ void initSDCard() {
   Serial.print(String(fileCount));
   Serial.print(" files found");
   displayInfo("SD Ready", String(fileCount) + " files", "found");
-  delay(2000);
+  nonBlockingDelay(2000);
 }
 void sdCardMenu() {
   static bool buttonPressed = false;
@@ -1909,16 +2015,16 @@ void sdCardMenu() {
       menuIndex = (menuIndex == 0) ? totalMenuItems - 1 : menuIndex - 1;
       displaySDMenuOptions();  // Redraw menu to reflect the change
       buttonPressed = true;
-      delay(100);  // Debounce delay
+      nonBlockingDelay(100);  // Debounce nonBlockingDelay
     } else if (isButtonPressed(DOWN_BUTTON_PIN)) {
       menuIndex = (menuIndex == totalMenuItems - 1) ? 0 : menuIndex + 1;
       displaySDMenuOptions();  // Redraw menu to reflect the change
       buttonPressed = true;
-      delay(100);  // Debounce delay
+      nonBlockingDelay(100);  // Debounce nonBlockingDelay
     } else if (isButtonPressed(SELECT_BUTTON_PIN)) {
       executeSDMenuAction(menuIndex);  // Execute the selected action
       buttonPressed = true;
-      delay(100);  // Debounce delay
+      nonBlockingDelay(100);  // Debounce nonBlockingDelay
     }
   } else {
     // Reset buttonPressed flag when no buttons are pressed
@@ -1982,17 +2088,17 @@ void displaySDMenuOptions() {
 
 int getButtonInput() {
   if (digitalRead(UP_BUTTON_PIN) == LOW) {
-    delay(200);                                                   // Debounce delay
+    nonBlockingDelay(200);                                        // Debounce nonBlockingDelay
     if (digitalRead(UP_BUTTON_PIN) == LOW) return UP_BUTTON_PIN;  // Ensure it's still pressed
   }
 
   if (digitalRead(DOWN_BUTTON_PIN) == LOW) {
-    delay(200);  // Debounce delay
+    nonBlockingDelay(200);  // Debounce nonBlockingDelay
     if (digitalRead(DOWN_BUTTON_PIN) == LOW) return DOWN_BUTTON_PIN;
   }
 
   if (digitalRead(SELECT_BUTTON_PIN) == LOW) {
-    delay(200);  // Debounce delay
+    nonBlockingDelay(200);  // Debounce nonBlockingDelay
     if (digitalRead(SELECT_BUTTON_PIN) == LOW) return SELECT_BUTTON_PIN;
   }
 
@@ -2025,14 +2131,14 @@ void viewFiles() {
   if (!root) {
     Serial.println("Failed to open root directory");
     displayInfo("SD Error", "Can't open root", "Check format");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
   if (!root.isDirectory()) {
     root.close();
     Serial.println("Root is not a directory");
     displayInfo("SD Error", "Invalid root", "Check format");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
   Serial.println("Reading directory contents:");
@@ -2050,7 +2156,7 @@ void viewFiles() {
   root.close();
   if (fileCount == 0) {
     displayInfo("No Files", "SD card is", "empty");
-    delay(2000);
+    nonBlockingDelay(2000);
     return;
   }
   // Enter file list view
@@ -2060,10 +2166,10 @@ void viewFiles() {
     int button = getButtonInput();
     if (button == UP_BUTTON_PIN) {
       currentFileIndex = (currentFileIndex == 0) ? fileCount - 1 : currentFileIndex - 1;
-      delay(150);  // Debounce delay
+      nonBlockingDelay(150);  // Debounce nonBlockingDelay
     } else if (button == DOWN_BUTTON_PIN) {
       currentFileIndex = (currentFileIndex == fileCount - 1) ? 0 : currentFileIndex + 1;
-      delay(150);  // Debounce delay
+      nonBlockingDelay(150);  // Debounce nonBlockingDelay
     } else if (button == SELECT_BUTTON_PIN) {
       inFileView = false;  // Exit file list view
     }
@@ -2109,19 +2215,19 @@ void deleteFile() {
   displayInfo("Delete File?", fileList[currentFileIndex], "SELECT:Yes UP:No");
   while (true) {
     if (digitalRead(SELECT_BUTTON_PIN) == LOW) {
-      delay(200);
+      nonBlockingDelay(200);
       if (SD.remove("/" + fileList[currentFileIndex])) {
         displayInfo("Success", "File deleted", fileList[currentFileIndex]);
       } else {
         displayInfo("Error", "Could not", "delete file");
       }
-      delay(2000);
+      nonBlockingDelay(2000);
       break;
     }
     if (digitalRead(UP_BUTTON_PIN) == LOW) {
-      delay(200);
+      nonBlockingDelay(200);
       displayInfo("Cancelled", "File not", "deleted");
-      delay(2000);
+      nonBlockingDelay(2000);
       break;
     }
   }
@@ -2147,12 +2253,12 @@ void loadData() {
     // Display first part of file contents
     displayInfo("File Contents", content.substring(0, 40), "SELECT:Exit");
     while (digitalRead(SELECT_BUTTON_PIN) != LOW) {
-      delay(50);  // Wait for button press
+      nonBlockingDelay(50);  // Wait for button press
     }
-    delay(200);  // Debounce
+    nonBlockingDelay(200);  // Debounce
   } else {
     displayInfo("Error", "Could not", "open file");
-    delay(2000);
+    nonBlockingDelay(2000);
   }
 }
 
@@ -2165,7 +2271,7 @@ uint32_t getRandomColor() {
 void updateNeoPixel() {
   strip.setPixelColor(0, getRandomColor());
   strip.show();
-  delay(200);                 // Keep the light on for 1000 milliseconds (1 second)
+  nonBlockingDelay(200);      // Keep the light on for 1000 milliseconds (1 second)
   strip.setPixelColor(0, 0);  // Turn off the pixel
   strip.show();               // Update the strip to show the change
 }
@@ -2182,12 +2288,12 @@ void partyLight() {
     for (int j = 0; j <= 255; j += fadeSpeed) {
       brightness = j;
       setPixelColor(colors[i], brightness);
-      delay(30);
+      nonBlockingDelay(30);
     }
     for (int j = 255; j >= 0; j -= fadeSpeed) {
       brightness = j;
       setPixelColor(colors[i], brightness);
-      delay(30);
+      nonBlockingDelay(30);
     }
   }
 }
@@ -2211,7 +2317,7 @@ void turnOffNeopixel() {
 
 bool isButtonPressed(uint8_t pin) {
   if (digitalRead(pin) == LOW) {
-    delay(100);  // Debounce delay
+    nonBlockingDelay(100);  // Debounce nonBlockingDelay
     if (digitalRead(pin) == LOW) {
       digitalWrite(LED_PIN, HIGH);  // Turn on LED
       return true;
@@ -2274,7 +2380,7 @@ void executeSelectedMenuItem() {
       Serial.println("PACKET button pressed");
       currentState = STATE_PACKET_MON;
       initPacketMon();
-      delay(5000);
+      nonBlockingDelay(5000);
       runPacketMon();
       break;
 
@@ -2282,74 +2388,74 @@ void executeSelectedMenuItem() {
       Serial.println("WIFI SNIFF button pressed");
       currentState = STATE_WIFI_SNIFFER;
       // test
-      wifi_sniffer_init();
-      delay(3000);
+      initWifiSniffer();
+      nonBlockingDelay(3000);
       runWifiSniffer();
       break;
     case AP_SCAN:
       Serial.println("AP SCAN button pressed");
       currentState = STATE_AP_SCAN;
       performScan();
-      delay(2000);           // Scan for networks
-      displayNetworkScan();  // Display the scanned networks
+      nonBlockingDelay(2000);  // Scan for networks
+      displayNetworkScan();    // Display the scanned networks
       break;
     case AP_JOIN:
       Serial.println("AP Join button pressed");
       currentState = STATE_AP_JOIN;
       startServer();
-      delay(2000);
+      nonBlockingDelay(2000);
       break;
     case AP_CREATE:
       Serial.println("AP Create button pressed");
       currentState = STATE_AP_CREATE;
       startSoftAP();
-      delay(2000);  // Scan for networks
+      nonBlockingDelay(2000);  // Scan for networks
       break;
     case STOP_AP:
       Serial.println("STOP AP button pressed");
       currentState = STATE_STOP_AP;
       handleStopServer();
-      delay(2000);  // Scan for networks
+      nonBlockingDelay(2000);  // Scan for networks
       break;
     case STOP_SERVER:
       Serial.println("STOP SERVER button pressed");
       currentState = STATE_STOP_SERVER;
       handleStopServer();
-      delay(2000);  // Scan for networks
+      nonBlockingDelay(2000);  // Scan for networks
       break;
     case BT_SCAN:
       Serial.println("BT SCAN button pressed");
       currentState = STATE_BT_SCAN;
       initBTScan();
-      delay(2000);  // Scan for networks
+      //nonBlockingDelay(2000);  // Scan for networks
       runBTScan();
       break;
     case BT_SERIAL_CMD:
       Serial.println("BT SCAN button pressed");
       currentState = STATE_BT_SERIAL;
       initBTSerialDisplay();
-      delay(2000);
+      nonBlockingDelay(2000);
       initBTSerial();
-      delay(2000);
+      nonBlockingDelay(2000);
       runBTSerial();
       while (currentState == STATE_BT_SERIAL) {
         runBTSerial();  // Check for Bluetooth commands
         // Add any other logic you need here
-        delay(1000);  // Small delay to prevent excessive CPU usage
+        nonBlockingDelay(1000);  // Small nonBlockingDelay to prevent excessive CPU usage
       }
       break;
     case BT_HID:
       Serial.println("BT HID button pressed");
       currentState = STATE_BT_HID;
       initBTHid();
-      delay(2000);
+      nonBlockingDelay(2000);
       runBTHid();
       break;
     case DEVIL_TWIN:
       Serial.println("DEVIL TWIN button pressed");
       currentState = STATE_DEVIL_TWIN;
       initDevilTwin();
-      delay(2000);
+      nonBlockingDelay(2000);
       runDevilTwin();
       break;
     case RFID:
@@ -2373,18 +2479,28 @@ void executeSelectedMenuItem() {
       inSDMenu = true;
       inMenu = false;
       currentSDMenuItem = 0;
-      displaySDMenuOptions();
-
+      //displaySDMenuOptions();
+      viewFiles();
       break;
+    case READ_FILES:
+      Serial.println("READ FILES button pressed");
+      currentState = STATE_READ_FILES;
+      inSDMenu = true;
+      inMenu = false;
+      currentSDMenuItem = 0;
+      //displaySDMenuOptions();
+      loadData();
+      break;
+
     case PARTY_LIGHT:
       Serial.println("PARTYLIGHT button pressed");
       partyLight();
-      delay(2000);
+      nonBlockingDelay(2000);
       break;
     case LIGHTOFF:
       Serial.println("LIGHTOFF button pressed");
       turnOffNeopixel();
-      delay(2000);
+      nonBlockingDelay(2000);
       break;
   }
 }
@@ -2419,7 +2535,7 @@ void displayInfoScreen() {
 }
 void setup() {
   Serial.begin(115200);
-  delay(10);
+  nonBlockingDelay(10);
   initDisplay();
   pinMode(UP_BUTTON_PIN, INPUT);
   pinMode(DOWN_BUTTON_PIN, INPUT);
@@ -2429,20 +2545,24 @@ void setup() {
 
   // Initialize U8g2_for_Adafruit_GFX
   u8g2_for_adafruit_gfx.begin(display);
-  initRFID();
-  delay(1000);
-  initGPS();
-  delay(1000);
-  strip.begin();
-  strip.setPixelColor(0, strip.Color(150, 0, 0));  // Bright red
-  strip.show();                                    // Initialize all pixels to 'off'
   // Display splash screens
-  /*displayTitleScreen();
-    delay(2000); // Show title screen for 3 seconds
-    displayInfoScreen();
-    delay(2000); // Show info screen for 5 seconds
-    */
-  // Initial display
+  displayTitleScreen3();
+  nonBlockingDelay(2000);  // Show title screen for 3 seconds
+
+  displayInfoScreen();
+  nonBlockingDelay(2000);  // Show info screen for 5 seconds
+  initRFID();
+  nonBlockingDelay(1000);
+  initGPS();
+  nonBlockingDelay(1000);
+  initSDCard();
+  nonBlockingDelay(1000);
+
+  strip.begin();
+  strip.setPixelColor(0, strip.Color(150, 0, 0));    // Bright red
+  strip.show();                                      // Initialize all pixels to 'off'
+                                                     // Initial
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set back to small font
   drawMenu();
 }
 
@@ -2452,9 +2572,11 @@ void loop() {
     command.trim();          // Remove any trailing newline or spaces
     handleCommand(command);  // Process the command
   }
+  /*
   if (inSDMenu) {
     sdCardMenu();
   }
+  */
   switch (currentState) {
     case STATE_MENU:
       handleMenuSelection();
@@ -2465,16 +2587,16 @@ void loop() {
         // Clean up WiFi sniffer if necessary
         esp_wifi_set_promiscuous(false);
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_PACKET_MON:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
@@ -2482,7 +2604,7 @@ void loop() {
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
@@ -2490,7 +2612,7 @@ void loop() {
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
@@ -2498,7 +2620,7 @@ void loop() {
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
@@ -2506,7 +2628,7 @@ void loop() {
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
@@ -2514,75 +2636,84 @@ void loop() {
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_BT_SCAN:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_BT_SERIAL:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_BT_HID:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         cleanupBTScan();
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_DEVIL_TWIN:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
         // wifi cleanup
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_RFID:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
     case STATE_READ_BLOCKS:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
 
     case STATE_WARDRIVER:
       if (isButtonPressed(HOME_BUTTON_PIN)) {
-        delay(1000);
+        nonBlockingDelay(1000);
         currentState = STATE_MENU;
         drawMenu();
-        delay(500);  // Debounce delay
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
+        return;
+      }
+      break;
+    case STATE_READ_FILES:
+      if (isButtonPressed(HOME_BUTTON_PIN)) {
+        nonBlockingDelay(1000);
+        currentState = STATE_MENU;
+        drawMenu();
+        nonBlockingDelay(500);  // Debounce nonBlockingDelay
         return;
       }
       break;
@@ -2593,7 +2724,7 @@ void loop() {
         //sdCardMenu();
         if (!buttonPressed) {
           if (isButtonPressed(HOME_BUTTON_PIN)) {
-            delay(200);  // Debounce delay
+            nonBlockingDelay(200);  // Debounce nonBlockingDelay
             currentState = STATE_MENU;
             menuIndex = 0;             // Reset to first item when returning home
             firstVisibleMenuItem = 0;  // Reset first visible item
