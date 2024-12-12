@@ -352,13 +352,9 @@ void itemLoadingScreen(const String &Text) {
   display.setTextWrap(false);
   u8g2_for_adafruit_gfx.setCursor(15, 31);
   u8g2_for_adafruit_gfx.print("l o a d i n g . .");
-
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set back to small font
-
-  // Set cursor for Bluetooth text without changing the position
   u8g2_for_adafruit_gfx.setCursor(0, 5);
   u8g2_for_adafruit_gfx.print(Text);  // Print the passed Bluetooth text
-
   // Draw hourglass images
   display.drawBitmap(30, 37, image_hourglass4_bits, 24, 24, 1);
   display.drawBitmap(63, 37, image_hourglass5_bits, 24, 24, 1);
@@ -720,6 +716,8 @@ void performScan() {
   clearArray();
   if (n >= 0) {
     Serial.println("Scanned Networks:");
+    Serial.print("#");
+    Serial.print(totalNetworks);
     for (int i = 0; i < n && i < 30; ++i) {
       _Network network;
       network.ssid = WiFi.SSID(i);
@@ -756,7 +754,8 @@ void displayNetworkScan() {
 
   // Display the title
   u8g2_for_adafruit_gfx.setCursor(0, 10);
-  u8g2_for_adafruit_gfx.print("Networks Found: " + totalNetworks);
+  u8g2_for_adafruit_gfx.print("Networks Found: ");
+  u8g2_for_adafruit_gfx.print(totalNetworks);
   // Iterate through the _networks array and display each SSID
   for (int i = 0; i < networksPerPage; ++i) {
     int index = currentIndex + i;
@@ -807,6 +806,7 @@ bool serverRunning = false;
 // Function to handle the root path (/)
 
 void startServer() {
+  itemLoadingScreen("--->starting web server");
   // Connect to WiFi
   Serial.print("Connecting to ");
   Serial.println(ssid);
@@ -852,9 +852,10 @@ void startServer() {
 const char *softAP = "cypherbox";
 const char *softPass = "cypher12345!";
 void startSoftAP() {
+  itemLoadingScreen("--->start soft AP");
   // Connect to WiFi
   display.clearDisplay();
-  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set to a small font
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_5x8_tr);  // Set back to small font
   Serial.print("Creating Soft AP:");
   Serial.println(softAP);
   Serial.println(softPass);
@@ -903,6 +904,7 @@ void handleStopServer() {
   server.stop();
   Serial.println("Server stopped");
   display.clearDisplay();
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_5x8_tr);  // Set back to small font
   u8g2_for_adafruit_gfx.setCursor(0, 10);
   u8g2_for_adafruit_gfx.print("WEB SERVER STOPPED!");
   u8g2_for_adafruit_gfx.setCursor(0, 30);
@@ -915,6 +917,7 @@ void handleStopAP() {
   WiFi.softAPdisconnect(true);
   Serial.println("Server stopped & soft AP turned off");
   display.clearDisplay();
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_5x8_tr);  // Set back to small font
   u8g2_for_adafruit_gfx.setCursor(0, 10);
   u8g2_for_adafruit_gfx.print("SOFT AP STOPPED!");
   u8g2_for_adafruit_gfx.setCursor(0, 20);
@@ -1236,35 +1239,39 @@ const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type) {
 }
 
 void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
- if (!snifferRunning || type != WIFI_PKT_MGMT) return;
- 
- const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
- const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
- 
- char message1[64];  // First line
- char message2[64];  // Second line
- 
- // Split the message into two lines
- snprintf(message1, sizeof(message1), "TYPE=%s CHAN=%d RSSI=%d", 
-   wifi_sniffer_packet_type2str(type), 
-   ppkt->rx_ctrl.channel, 
-   ppkt->rx_ctrl.rssi);
- 
- snprintf(message2, sizeof(message2), "A1=%02x:%02x:%02x:%02x:%02x:%02x",
-   hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], 
-   hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
- 
- Serial.println(message1);
- Serial.println(message2);
- 
- display.clearDisplay();
- display.setTextSize(1);
- display.setTextColor(SSD1306_WHITE);
- display.setCursor(0, 0);
- display.println(message1);
- display.setCursor(0, 10);  // Move to next line (adjust based on text size)
- display.println(message2);
- display.display();
+  if (!snifferRunning || type != WIFI_PKT_MGMT) return;
+
+  const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
+  const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
+
+  char message1[64];  // First line
+  char message2[64];  // Second line
+
+  // Split the message into two lines
+  snprintf(message1, sizeof(message1), "T=%s CH=%d RS=%d",
+           wifi_sniffer_packet_type2str(type),
+           ppkt->rx_ctrl.channel,
+           ppkt->rx_ctrl.rssi);
+
+  snprintf(message2, sizeof(message2), "A1=%02x:%02x:%02x:%02x:%02x:%02x",
+           hdr->addr1[0], hdr->addr1[1], hdr->addr1[2],
+           hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
+
+  Serial.println(message1);
+  Serial.println(message2);
+
+  display.clearDisplay();
+  //display.setTextSize(1);
+  //display.setTextColor(SSD1306_WHITE);
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_5x8_tr);  // Set back to small font
+  u8g2_for_adafruit_gfx.setCursor(0, 7);
+  u8g2_for_adafruit_gfx.println("Wifi Sniffer");  // Print the passed Bluetooth text
+  //u8g2_for_adafruit_gfx.setFont(u8g2_font_4x6_tf);
+  u8g2_for_adafruit_gfx.setCursor(0, 25);
+  u8g2_for_adafruit_gfx.println(message1);
+  u8g2_for_adafruit_gfx.setCursor(0, 35);  // Move to next line (adjust based on text size)
+  u8g2_for_adafruit_gfx.println(message2);
+  display.display();
 }
 
 void initWifiSniffer() {
@@ -2515,6 +2522,10 @@ void displayTitleScreen() {
 }
 void displayInfoScreen() {
   display.clearDisplay();
+  u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set back to small font
+  u8g2_for_adafruit_gfx.setCursor(0, 5);
+  u8g2_for_adafruit_gfx.print("A B O U T");  // Print the passed Bluetooth text
+
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set back to small font
   u8g2_for_adafruit_gfx.setCursor(0, 22);
   u8g2_for_adafruit_gfx.print("Welcome to CYPHER BOX!");
