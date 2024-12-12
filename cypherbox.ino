@@ -1881,19 +1881,15 @@ void initSDCard() {
   // Force SPI to known state
   SPI.end();
   nonBlockingDelay(100);
-
   // Initialize SPI with explicit settings
   SPISettings spiSettings(4000000, MSBFIRST, SPI_MODE0);
-
   // Begin SPI with forced pins
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
   nonBlockingDelay(100);
-
   // Configure CS pin
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_CS, HIGH);
   nonBlockingDelay(100);
-
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
   nonBlockingDelay(3000);
   // Try to initialize SD card
@@ -1911,7 +1907,6 @@ void initSDCard() {
     nonBlockingDelay(2000);
     return;
   }
-
   // Print card type
   String cardTypeStr = "Unknown";
   switch (cardType) {
@@ -1940,7 +1935,6 @@ void initSDCard() {
     nonBlockingDelay(2000);
     return;
   }
-
   // Count files in root directory
   int fileCount = 0;
   while (true) {
@@ -1961,7 +1955,6 @@ void initSDCard() {
 }
 void sdCardMenu() {
   static bool buttonPressed = false;
-
   if (!buttonPressed) {
     if (isButtonPressed(UP_BUTTON_PIN)) {
       menuIndex = (menuIndex == 0) ? totalMenuItems - 1 : menuIndex - 1;
@@ -1992,11 +1985,6 @@ const char *sdMenuOptions[] = {
   "Back to Main Menu"
 };
 
-/*
-void displayMenuOptions() {
-  displayInfo("SD Card Menu", sdMenuOptions[menuIndex]);
-}*/
-
 void displaySDMenuOptions() {
   display.clearDisplay();
   drawBorder();
@@ -2005,7 +1993,6 @@ void displaySDMenuOptions() {
   display.setCursor(4, 4);
   display.println("SD Card");
   display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
-
   // Calculate which items to show based on current selection
   int startIdx = 0;
   if (currentSDMenuItem > 2) {
@@ -2015,7 +2002,6 @@ void displaySDMenuOptions() {
     startIdx = totalMenuItems - 4;
   }
   if (startIdx < 0) startIdx = 0;
-
   // Display up to 4 menu items
   for (int i = 0; i < 4 && (startIdx + i) < totalMenuItems; i++) {
     display.setCursor(4, 18 + i * 10);
