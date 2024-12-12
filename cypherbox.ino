@@ -7,9 +7,9 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "esp_event_loop.h"
+// Display
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Adafruit_NeoPixel.h>
 #include <U8g2_for_Adafruit_GFX.h>
 // BT
 #include <BluetoothSerial.h>
@@ -40,6 +40,8 @@
 #include <time.h>
 #include <RTClib.h>
 #include <SD.h>
+// ETC
+#include <Adafruit_NeoPixel.h>
 
 // STATE MANAGEMENT
 enum AppState {
@@ -116,16 +118,13 @@ enum RfidItem
   ERASE
 };
 */
+// SYSTEM VARIABLES
 
 // volatile bool stopSniffer = false; // Flag to stop the sniffer
 volatile bool snifferRunning = true;
 const int MAX_VISIBLE_MENU_ITEMS = 3;  // Maximum number of items visible on the screen at a time
 MenuItem selectedMenuItem = PACKET_MON;
 int firstVisibleMenuItem = 0;
-
-// ***FOR YELLOW/BLUE SSD1306 SCREEN***Adjust the constants and initialization as needed
-#define YELLOW_HEIGHT 16
-#define BLUE_HEIGHT (SCREEN_HEIGHT - YELLOW_HEIGHT)
 
 // U8g2 for Adafruit GFX
 U8G2_FOR_ADAFRUIT_GFX u8g2_for_adafruit_gfx;
@@ -134,6 +133,9 @@ U8G2_FOR_ADAFRUIT_GFX u8g2_for_adafruit_gfx;
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+// ***FOR YELLOW/BLUE SSD1306 SCREEN***Adjust the constants and initialization as needed
+#define YELLOW_HEIGHT 16
+#define BLUE_HEIGHT (SCREEN_HEIGHT - YELLOW_HEIGHT)
 // *** PINS ***
 #define NEOPIXEL_PIN 26
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ800);
@@ -144,7 +146,6 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, NEOPIXEL_PIN, NEO_RGB + NEO_KHZ80
 #define DOWN_BUTTON_PIN 35
 #define SELECT_BUTTON_PIN 15
 #define HOME_BUTTON_PIN 2
-
 //SD CARD Variables
 #define SD_CS 5
 #define SD_MOSI 23  // SD Card MOSI pin
@@ -168,7 +169,7 @@ String SerialPW = "";
 int totalNetworks = 0;  // Global variable to store the number of networks found
 
 // PACKET MONITOR SETTINGS
-#define MAX_CH 14      // 1 - 14 channels (1-11 for US, 1-13 for EU and 1-14 for Japan)
+#define MAX_CH 11      // 1 - 14 channels (1-11 for US, 1-13 for EU and 1-14 for Japan)
 #define SNAP_LEN 2324  // max len of each recieved packet
 #define BUTTON_PIN 15
 #define USE_DISPLAY   // comment out if you don't want to use the OLED display
@@ -227,6 +228,7 @@ static const unsigned char PROGMEM image_hourglass5_bits[] = { 0x00, 0x00, 0x00,
 static const unsigned char PROGMEM image_hourglass6_bits[] = { 0x00, 0x02, 0x00, 0x00, 0x07, 0x00, 0x00, 0x02, 0x80, 0x00, 0x05, 0x40, 0x00, 0x08, 0xa0, 0x00, 0x10, 0x50, 0x00, 0x10, 0x28, 0x00, 0x13, 0x94, 0x00, 0x17, 0xca, 0x00, 0x17, 0xe7, 0x00, 0x17, 0xca, 0x07, 0xe0, 0x10, 0x08, 0x07, 0xe0, 0x50, 0x08, 0x00, 0xe0, 0x08, 0x00, 0x50, 0x08, 0x00, 0x28, 0x08, 0x00, 0x14, 0x08, 0x00, 0x0a, 0x08, 0x00, 0x05, 0x10, 0x00, 0x02, 0xa0, 0x00, 0x01, 0x40, 0x00, 0x00, 0xe0, 0x00, 0x00, 0x40, 0x00 };
 static const unsigned char PROGMEM image_bluetooth_not_connected_bits[] = { 0x02, 0x00, 0x83, 0x00, 0x42, 0x80, 0x22, 0x40, 0x12, 0x20, 0x08, 0x20, 0x04, 0x40, 0x02, 0x00, 0x05, 0x00, 0x0a, 0x80, 0x12, 0x40, 0x22, 0x20, 0x02, 0x50, 0x02, 0x88, 0x01, 0x04, 0x00, 0x00 };
 
+// Use this instead of delay()
 void nonBlockingDelay(unsigned long ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
@@ -234,7 +236,8 @@ void nonBlockingDelay(unsigned long ms) {
     yield();  // Very important!
   }
 }
-// *** DISPLAY
+
+// *** DISPLAY Functions ***
 void initDisplay() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Address 0x3C for 128x64
     Serial.println(F("SSD1306 allocation failed"));
@@ -282,15 +285,12 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   drawBorder();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-
   // Title
   display.setCursor(4, 4);
   display.println(title);
   display.drawLine(0, 14, SCREEN_WIDTH, 14, SSD1306_WHITE);
-
   // Display info lines with proper spacing and truncation if needed
   int maxTextWidth = 20;  // Approximate character limit per line for 128-pixel width
-
   // Truncate lines if they exceed the max character count
   if (info1.length() > maxTextWidth) info1 = info1.substring(0, maxTextWidth - 3) + "...";
   if (info2.length() > maxTextWidth) info2 = info2.substring(0, maxTextWidth - 3) + "...";
@@ -345,10 +345,8 @@ void loadingScreen() {
 
 void itemLoadingScreen(const String &Text) {
   display.clearDisplay();
-
   u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
   display.drawBitmap(0, 38, image_LoadingHourglass_bits, 24, 24, 1);
-
   display.setTextWrap(false);
   u8g2_for_adafruit_gfx.setCursor(15, 31);
   u8g2_for_adafruit_gfx.print("l o a d i n g . .");
@@ -407,7 +405,6 @@ void runBTScan() {
   int bleDeviceCount = foundDevices->getCount();
   int devicesPerPage = 4;  // Max devices displayed per page
   int currentPage = 0;
-
   // Store relevant information and free scan results
   totalDevices = min(bleDeviceCount, 30);
   for (int i = 0; i < totalDevices; i++) {
@@ -586,7 +583,6 @@ void startWiFi() {
     Serial.print(".");
     attempts++;
   }
-
   if (WiFi.status() == WL_CONNECTED) {
     SerialBT.println("\nConnected to WiFi!");
     SerialBT.print("IP Address: ");
@@ -628,7 +624,6 @@ void stopBluetooth() {
 // END BT SERIAL COMMANDS //
 
 // BT HID START //
-
 void initBTHid() {
   itemLoadingScreen("-->bluetooth HID");
 
@@ -636,7 +631,6 @@ void initBTHid() {
   Serial.println("Bluetooth HID initialized");
   nonBlockingDelay(3000);
 }
-
 void runBTHid() {
   if (bleKeyboard.isConnected()) {
     display.clearDisplay();
@@ -723,7 +717,6 @@ void performScan() {
       network.ssid = WiFi.SSID(i);
       Serial.print("SSID: ");
       Serial.println(network.ssid);
-
       Serial.print("BSSID: ");
       for (int j = 0; j < 6; j++) {
         network.bssid[j] = WiFi.BSSID(i)[j];
@@ -736,11 +729,9 @@ void performScan() {
       network.rssi = WiFi.RSSI(i);
       Serial.print("RSSI: ");
       Serial.println(network.rssi);
-
       network.ch = WiFi.channel(i);
       Serial.print("Channel: ");
       Serial.println(network.ch);
-
       _networks[i] = network;
     }
   }
@@ -751,7 +742,6 @@ const int networksPerPage = 5;
 void displayNetworkScan() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set to a small font
-
   // Display the title
   u8g2_for_adafruit_gfx.setCursor(0, 10);
   u8g2_for_adafruit_gfx.print("Networks Found: ");
@@ -787,7 +777,6 @@ void displayNetworkScan() {
   }
 
   display.display();
-
   // Check if the button is pressed to iterate through networks
   if (isButtonPressed(SELECT_BUTTON_PIN)) {
     currentIndex += networksPerPage;  // Move to the next set of networks
@@ -797,14 +786,13 @@ void displayNetworkScan() {
   }
 }
 
-// Wifi Connect Credentials
-const char *ssid = "thanos lives forever";
-const char *password = "ntwatwa1990";
+// Wifi Connect Credentials to Your Network
+const char *ssid = "";
+const char *password = "";
 // Create a web server object
 WebServer server(80);
 bool serverRunning = false;
 // Function to handle the root path (/)
-
 void startServer() {
   itemLoadingScreen("--->starting web server");
   // Connect to WiFi
@@ -848,7 +836,7 @@ void startServer() {
   // server.handleClient();
 }
 
-// SOFT AP credentials to create wifi network
+// SOFT AP credentials to create a wifi network
 const char *softAP = "cypherbox";
 const char *softPass = "cypher12345!";
 void startSoftAP() {
@@ -894,10 +882,11 @@ void startSoftAP() {
   display.display();
 }
 
-// This is the WEB UI for CypherBox
+// This is the WEB UI for CypherBox -- edit html to change the webpage!
 void handleRoot() {
   server.send(200, "text/html", "<h1>Welcome to Cypher Box!</h1><br><h3>This is a simple web portal where you can acess your Cypher ^_^</h3>");
 }
+// Stops the private webserver
 void handleStopServer() {
   serverRunning = false;
   server.send(200, "text/html", "<h1>Server stopped.</h1>");
@@ -911,6 +900,7 @@ void handleStopServer() {
   u8g2_for_adafruit_gfx.print("Press home key to go back.");
   display.display();
 }
+// Stops the private wifi network
 void handleStopAP() {
   serverRunning = false;
   server.stop();
@@ -924,6 +914,7 @@ void handleStopAP() {
   u8g2_for_adafruit_gfx.print("Press home key to go back.");
   display.display();
 }
+// This function prints a message on the display
 void printOnDisplay(String message) {
   display.clearDisplay();
   display.setTextSize(1);
@@ -946,8 +937,9 @@ void printOnDisplay(String message) {
       display.display();
       */
 }
+
 // ***PACKET MONITOR START*** //
-/* ===== functions ===== */
+// functions
 double getMultiplicator() {
   uint32_t maxVal = 1;
   for (int i = 0; i < MAX_X; i++) {
@@ -977,14 +969,11 @@ bool setupSD() {
     Serial.println("Card Mount Failed");
     return false;
   }
-
   uint8_t cardType = SD_MMC.cardType();
-
   if (cardType == CARD_NONE) {
     Serial.println("No SD_MMC card attached");
     return false;
   }
-
   Serial.print("SD_MMC Card Type: ");
   if (cardType == CARD_MMC) {
     Serial.println("MMC");
@@ -995,10 +984,8 @@ bool setupSD() {
   } else {
     Serial.println("UNKNOWN");
   }
-
   uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
   Serial.printf("SD_MMC Card Size: %lluMB\n", cardSize);
-
   return true;
 }
 
@@ -1083,11 +1070,9 @@ void coreTask(void *p) {
       buttonPressed = false;
       buttonEnabled = true;
     }
-
     // save buffer to SD
     if (useSD)
       sdBuffer.save(&SD_MMC);
-
     // draw Display
     if (currentTime - lastDrawTime > 1000) {
       lastDrawTime = currentTime;
@@ -1115,7 +1100,6 @@ void initPacketMon() {
   preferences.begin("packetmonitor32", false);
   ch = preferences.getUInt("channel", 1);
   preferences.end();
-
   // System & WiFi
   nvs_flash_init();
   // tcpip_adapter_init(); // Add header file for this function: #include <esp_wifi.h>
@@ -1126,7 +1110,6 @@ void initPacketMon() {
   ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
   ESP_ERROR_CHECK(esp_wifi_start());
-
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
   // SD card
   sdBuffer = Buffer();
@@ -1146,23 +1129,20 @@ void initPacketMon() {
     display.flipScreenVertically();
   #endif
   */
-
   /* show start screen */
   display.fillScreen(SSD1306_BLACK);
   display.setTextColor(SSD1306_WHITE);
   // display.setFont(FreeMonoBold9pt7b); // Assuming you are using the FreeMonoBold9pt7b font
   display.setCursor(6, 6);
-  display.print("PacketMonitor32");
+  display.print("Packet Monitor");
   // display.setFont(FreeMonoBold9pt7b);
   display.setCursor(24, 34);
   display.print("Made with <3 by");
   display.setCursor(29, 44);
   display.print("@Spacehuhn");
   display.display();
-
   nonBlockingDelay(1000);
 #endif
-
   // second core
   xTaskCreatePinnedToCore(
     coreTask,      /* Function to implement the task */
@@ -1172,7 +1152,6 @@ void initPacketMon() {
     0,             /* Priority of the task */
     NULL,          /* Task handle. */
     RUNNING_CORE); /* Core where the task should run */
-
   esp_wifi_set_promiscuous_rx_cb(&wifi_promiscuous);
   esp_wifi_set_promiscuous(true);
 }
@@ -1185,13 +1164,13 @@ void runPacketMon() {
       nonBlockingDelay(500);  // Debounce nonBlockingDelay
       return;
     }
-
     {
       vTaskDelay(portMAX_DELAY);
     }
   }
 }
-// start Wifi sniffer
+
+// START Wifi sniffer
 #define LED_GPIO_PIN 26
 #define WIFI_CHANNEL_SWITCH_INTERVAL (5000)
 #define WIFI_CHANNEL_MAX (13)
@@ -1212,10 +1191,8 @@ typedef struct {
   wifi_ieee80211_mac_hdr_t hdr;
   uint8_t payload[0];
 } wifi_ieee80211_packet_t;
-
 static void wifi_sniffer_set_channel(uint8_t channel);
 static void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type);
-
 void wifi_sniffer_init(void) {
   nvs_flash_init();
   ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -1228,45 +1205,33 @@ void wifi_sniffer_init(void) {
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&wifi_sniffer_packet_handler);
 }
-
 void wifi_sniffer_set_channel(uint8_t channel) {
   esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
 }
-
 const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type) {
   return (type == WIFI_PKT_MGMT) ? "MGMT" : (type == WIFI_PKT_DATA) ? "DATA"
                                                                     : "MISC";
 }
-
 void wifi_sniffer_packet_handler(void *buff, wifi_promiscuous_pkt_type_t type) {
   if (!snifferRunning || type != WIFI_PKT_MGMT) return;
-
   const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
   const wifi_ieee80211_mac_hdr_t *hdr = &((wifi_ieee80211_packet_t *)ppkt->payload)->hdr;
-
   char message1[64];  // First line
   char message2[64];  // Second line
-
   // Split the message into two lines
   snprintf(message1, sizeof(message1), "T=%s CH=%d RS=%d",
            wifi_sniffer_packet_type2str(type),
            ppkt->rx_ctrl.channel,
            ppkt->rx_ctrl.rssi);
-
   snprintf(message2, sizeof(message2), "A1=%02x:%02x:%02x:%02x:%02x:%02x",
            hdr->addr1[0], hdr->addr1[1], hdr->addr1[2],
            hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
-
   Serial.println(message1);
   Serial.println(message2);
-
   display.clearDisplay();
-  //display.setTextSize(1);
-  //display.setTextColor(SSD1306_WHITE);
   u8g2_for_adafruit_gfx.setFont(u8g2_font_5x8_tr);  // Set back to small font
   u8g2_for_adafruit_gfx.setCursor(0, 7);
   u8g2_for_adafruit_gfx.println("Wifi Sniffer");  // Print the passed Bluetooth text
-  //u8g2_for_adafruit_gfx.setFont(u8g2_font_4x6_tf);
   u8g2_for_adafruit_gfx.setCursor(0, 25);
   u8g2_for_adafruit_gfx.println(message1);
   u8g2_for_adafruit_gfx.setCursor(0, 35);  // Move to next line (adjust based on text size)
@@ -1304,6 +1269,8 @@ void runWifiSniffer() {
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
+
+// Devil Twin may still need some work...deauthing may/may not work!
 // START DEVIL TWIN //
 // DEVIL_TWIN VARIABLE SETUP //
 typedef struct
@@ -1317,7 +1284,6 @@ const uint8_t DNS_PORT = 53;
 IPAddress apIP(192, 168, 1, 1);
 DNSServer dnsServer;
 WebServer webServer(80);
-
 _DevilNetwork _devilnetworks[16];
 _DevilNetwork _selectedNetwork;
 // uses clearArry()
@@ -1343,7 +1309,6 @@ void performDevilScan() {
       devilnetwork.ssid = WiFi.SSID(i);
       Serial.print("SSID: ");
       Serial.println(devilnetwork.ssid);
-
       Serial.print("BSSID: ");
       for (int j = 0; j < 6; j++) {
         devilnetwork.bssid[j] = WiFi.BSSID(i)[j];
@@ -1357,7 +1322,6 @@ void performDevilScan() {
       devilnetwork.ch = WiFi.channel(i);
       Serial.print("Channel: ");
       Serial.println(devilnetwork.ch);
-
       _devilnetworks[i] = devilnetwork;
     }
   }
@@ -1366,6 +1330,7 @@ void performDevilScan() {
 bool hotspot_active = false;
 bool deauthing_active = false;
 
+// Edit this to change devil twin web ui
 void handleResult() {
   String html = "";
   if (WiFi.status() != WL_CONNECTED) {
@@ -1385,7 +1350,6 @@ void handleResult() {
     Serial.println(_correct);
   }
 }
-
 String _tempHTML = "<html><head><meta name='viewport' content='initial-scale=1.0, width=device-width'>"
                    "<style> .content {max-width: 500px;margin: auto;}table, th, td {border: 1px solid black;border-collapse: collapse;padding-left:10px;padding-right:10px;}</style>"
                    "</head><body><div class='content'>"
@@ -1403,7 +1367,6 @@ void handleIndex() {
       }
     }
   }
-
   if (webServer.hasArg("deauth")) {
     if (webServer.arg("deauth") == "start") {
       deauthing_active = true;
@@ -1411,7 +1374,6 @@ void handleIndex() {
       deauthing_active = false;
     }
   }
-
   if (webServer.hasArg("hotspot")) {
     if (webServer.arg("hotspot") == "start") {
       hotspot_active = true;
@@ -1432,10 +1394,8 @@ void handleIndex() {
     }
     return;
   }
-
   if (hotspot_active == false) {
     String _html = _tempHTML;
-
     for (int i = 0; i < 16; ++i) {
       if (_devilnetworks[i].ssid == "") {
         break;
@@ -1448,7 +1408,6 @@ void handleIndex() {
         _html += "<button>Select</button></form></td></tr>";
       }
     }
-
     if (deauthing_active) {
       _html.replace("{deauth_button}", "Stop deauthing");
       _html.replace("{deauth}", "stop");
@@ -1456,7 +1415,6 @@ void handleIndex() {
       _html.replace("{deauth_button}", "Start deauthing");
       _html.replace("{deauth}", "start");
     }
-
     if (hotspot_active) {
       _html.replace("{hotspot_button}", "Stop EvilTwin");
       _html.replace("{hotspot}", "stop");
@@ -1464,19 +1422,15 @@ void handleIndex() {
       _html.replace("{hotspot_button}", "Start EvilTwin");
       _html.replace("{hotspot}", "start");
     }
-
     if (_selectedNetwork.ssid == "") {
       _html.replace("{disabled}", " disabled");
     } else {
       _html.replace("{disabled}", "");
     }
-
     _html += "</table>";
-
     if (_correct != "") {
       _html += "</br><h3>" + _correct + "</h3>";
     }
-
     _html += "</div></body></html>";
     webServer.send(200, "text/html", _html);
   } else {
@@ -1520,7 +1474,6 @@ void initDevilTwin() {
   webServer.onNotFound(handleIndex);
   webServer.begin();
   Serial.println("webserver begin, initdeviltwin done!");
-
   nonBlockingDelay(3000);
 }
 void runDevilTwin() {
@@ -1540,8 +1493,6 @@ void runDevilTwin() {
 }
 
 // *** GPS MODULES ***
-
-// SETUP
 // RTC setup
 RTC_Millis rtc;
 // Pin definitions for GPS module
@@ -1571,20 +1522,17 @@ void displayGPSData() {
   display.println(gps.altitude.meters());
   display.print("Sat: ");
   display.println(gps.satellites.value());
-
   // Get the current time from RTC and display it
   DateTime now = rtc.now();
   char buffer[30];
   snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
   display.print("Time: ");
   display.println(buffer);
-
   // Display the number of networks found and scan count
   display.print("Nets: ");
   display.println(networkCount);
   display.print("Scans: ");
   display.println(scanCount);
-
   display.display();
 }
 
@@ -1637,7 +1585,6 @@ void scanWiFiNetworks() {
   } else {
     displayError("CSV Write Error");
   }
-
   // Print networks to serial monitor
   Serial.print("Scan #");
   Serial.println(scanCount);
@@ -1752,7 +1699,6 @@ void runGPS() {
       // Update RTC with GPS time
       DateTime gpsTime(gps.date.year(), gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(), gps.time.second());
       rtc.adjust(gpsTime);
-
       // Display GPS data and scan for WiFi networks
       displayGPSData();
       scanWiFiNetworks();
@@ -1766,14 +1712,13 @@ void runGPS() {
 
 // *** TOOLS MODULES ***
 
-// RFID START
+// MFRC522 NFC Reader
 #define RST_PIN 25
 #define SS_PIN 27
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 void drawBorder() {
   display.drawRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
 }
-
 void initRFID() {
   Serial.println("MFRC522 NFC Reader");
   displayInfo("MFRC522 NFC Reader", "Initializing...");
@@ -1786,6 +1731,7 @@ void initRFID() {
   String chipInfo = "Chip: MFRC522";
   displayInfo("MFRC522 Info", chipInfo, fwVersion);
 }
+// Read RFID & display basic info
 void readRFID() {
   while (true) {
     // Check if HOME_BUTTON is pressed
@@ -1828,7 +1774,7 @@ void readRFID() {
     mfrc522.PCD_StopCrypto1();
   }
 }
-
+// Read RFID & display blocks data
 bool readBlock(uint8_t blockAddr, uint8_t *buffer) {
   MFRC522::StatusCode status;
   uint8_t size = 18;
@@ -1928,7 +1874,6 @@ void handleReadBlock() {
 void initSDCard() {
   displayInfo("SD Card", "Initializing...", "");
   Serial.println("Beginning SD Card initialization...");
-
   // Disable any existing SPI devices
   digitalWrite(SD_CS, HIGH);
   nonBlockingDelay(100);
