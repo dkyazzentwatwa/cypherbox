@@ -44,6 +44,7 @@
 #include <Adafruit_NeoPixel.h>
 
 // STATE MANAGEMENT
+// This allows us to keep track of the current state
 enum AppState {
   STATE_MENU,
   STATE_PACKET_MON,
@@ -95,7 +96,7 @@ enum MenuItem {
 };
 
 /*
-for future nesting of menus to clean it up...
+Future idea: nesting of menus to clean it up...
 enum WifiItem
 {
   AP_SCAN,
@@ -123,10 +124,10 @@ enum RfidItem
 // volatile bool stopSniffer = false; // Flag to stop the sniffer
 volatile bool snifferRunning = true;
 const int MAX_VISIBLE_MENU_ITEMS = 3;  // Maximum number of items visible on the screen at a time
-MenuItem selectedMenuItem = PACKET_MON;
+MenuItem selectedMenuItem = PACKET_MON; // Default item selected
 int firstVisibleMenuItem = 0;
 
-// U8g2 for Adafruit GFX
+// U8g2 variable for Adafruit GFX
 U8G2_FOR_ADAFRUIT_GFX u8g2_for_adafruit_gfx;
 // Screen Setup
 #define SCREEN_WIDTH 128
@@ -280,6 +281,8 @@ void drawMenu() {
   display.display();
   updateNeoPixel();
 }
+
+// Display info lines with proper spacing and truncation if needed
 void displayInfo(String title, String info1 = "", String info2 = "", String info3 = "") {
   display.clearDisplay();
   drawBorder();
@@ -305,6 +308,7 @@ void displayInfo(String title, String info1 = "", String info2 = "", String info
   display.display();
 }
 
+// Display the title screen
 void displayTitleScreen3() {
   display.clearDisplay();
   display.setTextWrap(false);
@@ -330,6 +334,7 @@ void displayTitleScreen3() {
   display.drawBitmap(42, 29, image_mute_text_bits, 19, 5, 1);
   display.display();
 }
+
 void loadingScreen() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_adventurer_tr);  // Use a larger font for the title
@@ -377,6 +382,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     nonBlockingDelay(200);
   }
 };
+
+// Initialize the BLE scanner
 void initBTScan() {
   itemLoadingScreen("-->bluetooth scan");
   // Initialize BLE
@@ -399,6 +406,7 @@ BTDeviceInfo deviceList[30];  // Array to store device info
 int currentDeviceIndex = 0;   // Index of the currently displayed device
 int totalDevices = 0;         // Total number of devices found
 
+// Run the BLE scan
 void runBTScan() {
   // Start BLE scan and get the device count
   BLEScanResults *foundDevices = pBLEScan->start(scanTime, false);
@@ -443,6 +451,7 @@ void runBTScan() {
   }
 }
 
+// Cleanup BLE scan
 void cleanupBTScan() {
   // Stop BLE scan
   if (pBLEScan) {
@@ -456,6 +465,7 @@ void cleanupBTScan() {
 
 // BT SERIAL COMMANDS //
 // variables
+// BLE Keyboard setup -- You will see this popup on your phone/pc
 BleKeyboard bleKeyboard("cypherbox", "cypher", 100);
 bool bluetoothActive = true;
 String BTssid = "";
@@ -476,6 +486,7 @@ void initBTSerialDisplay() {
   display.display();
 }
 
+// initialize BT serial connection
 void initBTSerial() {
   itemLoadingScreen("-->bluetooth serial");
 
@@ -486,6 +497,8 @@ void initBTSerial() {
     Serial.println("Bluetooth initialized");
   }
 }
+
+// run BT serial
 void runBTSerial() {
   // Check if data is available on Bluetooth
   if (SerialBT.available()) {
@@ -494,6 +507,8 @@ void runBTSerial() {
     handleCommand(command);
   }
 }
+
+// handle BT serial commands
 void handleCommand(String command) {
   Serial.println("Command received: " + command);
   SerialBT.println("Command received: " + command);
@@ -560,6 +575,7 @@ void handleCommand(String command) {
   }
 }
 
+// start wifi connection via BT serial w/ WIFI & PASS variables set earlier
 void startWiFi() {
   if (BTssid == "" || BTpassword == "") {
     SerialBT.println("SSID or Password not set. Use WIFI and PASS commands first.");
@@ -624,6 +640,7 @@ void stopBluetooth() {
 // END BT SERIAL COMMANDS //
 
 // BT HID START //
+// Runs scripts on a device via Bluetooth
 void initBTHid() {
   itemLoadingScreen("-->bluetooth HID");
 
@@ -631,6 +648,8 @@ void initBTHid() {
   Serial.println("Bluetooth HID initialized");
   nonBlockingDelay(3000);
 }
+
+// A function to run the classic Rick Roll attack on Mac OS
 void runBTHid() {
   if (bleKeyboard.isConnected()) {
     display.clearDisplay();
@@ -693,6 +712,8 @@ struct _Network {
   uint8_t ch;
 };
 _Network _networks[16];  // Adjust size as needed
+
+// Clear the network array
 void clearArray() {
   for (int i = 0; i < 16; ++i) {
     _networks[i].ssid = "";
@@ -702,6 +723,8 @@ void clearArray() {
     _networks[i].ch = 0;
   }
 }
+
+// Perform a WiFi scan
 void performScan() {
   display.clearDisplay();
   itemLoadingScreen("-->starting AP scan");
@@ -739,6 +762,7 @@ void performScan() {
 int currentIndex = 0;  // Keep track of the current starting index for the display
 const int networksPerPage = 5;
 
+// Display the WiFi scan results
 void displayNetworkScan() {
   display.clearDisplay();
   u8g2_for_adafruit_gfx.setFont(u8g2_font_baby_tf);  // Set to a small font
@@ -775,7 +799,6 @@ void displayNetworkScan() {
       break;
     }
   }
-
   display.display();
   // Check if the button is pressed to iterate through networks
   if (isButtonPressed(SELECT_BUTTON_PIN)) {
@@ -786,12 +809,16 @@ void displayNetworkScan() {
   }
 }
 
-// Wifi Connect Credentials to Your Network
+// *** Enter a wifi network + password to have the ESP connect to.
 const char *ssid = "";
 const char *password = "";
+// ***
+
 // Create a web server object
 WebServer server(80);
+
 bool serverRunning = false;
+
 // Function to handle the root path (/)
 void startServer() {
   itemLoadingScreen("--->starting web server");
@@ -836,9 +863,11 @@ void startServer() {
   // server.handleClient();
 }
 
-// SOFT AP credentials to create a wifi network
+// SOFT AP -- credentials to create a wifi network the is publically seen
 const char *softAP = "cypherbox";
 const char *softPass = "cypher12345!";
+
+// Function that starts the soft AP
 void startSoftAP() {
   itemLoadingScreen("--->start soft AP");
   // Connect to WiFi
@@ -886,6 +915,7 @@ void startSoftAP() {
 void handleRoot() {
   server.send(200, "text/html", "<h1>Welcome to Cypher Box!</h1><br><h3>This is a simple web portal where you can acess your Cypher ^_^</h3>");
 }
+
 // Stops the private webserver
 void handleStopServer() {
   serverRunning = false;
@@ -989,6 +1019,7 @@ bool setupSD() {
   return true;
 }
 
+
 void wifi_promiscuous(void *buf, wifi_promiscuous_pkt_type_t type) {
   wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
   wifi_pkt_rx_ctrl_t ctrl = (wifi_pkt_rx_ctrl_t)pkt->rx_ctrl;
@@ -1008,6 +1039,7 @@ void wifi_promiscuous(void *buf, wifi_promiscuous_pkt_type_t type) {
     sdBuffer.addPacket(pkt->payload, packetLength);
 }
 
+// This function draws the graph
 void draw() {
 #ifdef USE_DISPLAY
   double multiplicator = getMultiplicator();
@@ -1038,6 +1070,7 @@ void draw() {
   display.display();
 #endif
 }
+
 void coreTask(void *p) {
   uint32_t currentTime;
   while (true) {
@@ -1093,6 +1126,7 @@ void coreTask(void *p) {
     }
   }
 }
+
 
 void initPacketMon() {
   itemLoadingScreen("-->packet monitor");
@@ -1653,30 +1687,6 @@ void initGPS() {
   gpsSerial.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin);  // Start GPS serial communication
   nonBlockingDelay(5000);                              // Allow time for the system to stabilize
   Serial.print("GPS loaded.");
-  // Initialize OLED display
-  // Initialize SD card
-  //Serial.println("Initializing SD card...");
-  /*
-  if (!SD.begin(SD_CS_PIN)) {
-      Serial.println("Initialization failed!");
-  } else {
-      Serial.println("Initialization done.");
-      break
-  }
-
-  // nonBlockingDelay(4000);
-  //  Initialize CSV file
-  if (!initializeCSV())
-  {
-    displayError("CSV Init Error");
-  }
-  else
-  {
-    Serial.println("CSV Initialization done.");
-  }
-  nonBlockingDelay(3000);
-  */
-
   rtc.begin(DateTime(F(__DATE__), F(__TIME__)));  // Initialize RTC with compile time
   displayInfo("GPS OK...", "Wardriver OK...");
 }
