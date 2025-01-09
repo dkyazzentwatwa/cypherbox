@@ -123,8 +123,8 @@ enum RfidItem
 
 // volatile bool stopSniffer = false; // Flag to stop the sniffer
 volatile bool snifferRunning = true;
-const int MAX_VISIBLE_MENU_ITEMS = 3;  // Maximum number of items visible on the screen at a time
-MenuItem selectedMenuItem = PACKET_MON; // Default item selected
+const int MAX_VISIBLE_MENU_ITEMS = 3;    // Maximum number of items visible on the screen at a time
+MenuItem selectedMenuItem = PACKET_MON;  // Default item selected
 int firstVisibleMenuItem = 0;
 
 // U8g2 variable for Adafruit GFX
@@ -178,7 +178,7 @@ int totalNetworks = 0;  // Global variable to store the number of networks found
 #define SDA_PIN 21
 #define SCL_PIN 22
 #define MAX_X 128
-#define MAX_Y 51
+#define MAX_Y 64
 #if CONFIG_FREERTOS_UNICORE
 #define RUNNING_CORE 0
 #else
@@ -1061,11 +1061,16 @@ void draw() {
   display.setCursor(95, 0);  // Set cursor position for left-aligned text
   // display.print("Pkts:");
   display.drawLine(0, 63 - MAX_Y, MAX_X, 63 - MAX_Y, SSD1306_WHITE);  // Add color to drawLine
-  for (int i = 0; i < MAX_X; i++) {
-    len = pkts[i] * multiplicator;
-    display.drawLine(i, 63, i, 63 - (len > MAX_Y ? MAX_Y : len), SSD1306_WHITE);
-    if (i < MAX_X - 1)
-      pkts[i] = pkts[i + 1];
+  // Draw the waveform-style graph
+for (int i = 0; i < MAX_X - 1; i++) {
+  int currentHeight = 63 - ((pkts[i] * multiplicator * 4) > MAX_Y ? MAX_Y : (pkts[i] * multiplicator * 4)); // Adjust '2' for height scaling
+  int nextHeight = 63 - ((pkts[i + 1] * multiplicator * 4) > MAX_Y ? MAX_Y : (pkts[i + 1] * multiplicator * 4)); // Same here
+  display.drawLine(i, currentHeight, i + 1, nextHeight, SSD1306_WHITE);
+}
+
+  // Shift data points for the next frame
+  for (int i = 0; i < MAX_X - 1; i++) {
+    pkts[i] = pkts[i + 1];
   }
   display.display();
 #endif
@@ -1103,11 +1108,9 @@ void coreTask(void *p) {
       buttonPressed = false;
       buttonEnabled = true;
     }
-    // save buffer to SD
-    if (useSD)
-      sdBuffer.save(&SD_MMC);
+
     // draw Display
-    if (currentTime - lastDrawTime > 1000) {
+    if (currentTime - lastDrawTime > 100) {
       lastDrawTime = currentTime;
       // Serial.printf("\nFree RAM %u %u\n", heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT), heap_caps_get_minimum_free_size(MALLOC_CAP_32BIT));// for debug purposes
       pkts[MAX_X - 1] = tmpPacketCounter;
@@ -1136,15 +1139,20 @@ void initPacketMon() {
   preferences.end();
   // System & WiFi
   nvs_flash_init();
+  esp_event_loop_delete_default();
   // tcpip_adapter_init(); // Add header file for this function: #include <esp_wifi.h>
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  esp_err_t err = esp_event_loop_create_default();
+  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    ESP_ERROR_CHECK(err);  // Fail if the error is not "already created"
+  }
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
   // ESP_ERROR_CHECK(esp_wifi_set_country(WIFI_COUNTRY_EU));
   ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
   ESP_ERROR_CHECK(esp_wifi_start());
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  /*
   // SD card
   sdBuffer = Buffer();
   if (setupSD())
@@ -1158,7 +1166,7 @@ void initPacketMon() {
     Serial.println(F("SSD1306 allocation failed"));
     for (;;)
       ;
-  }
+  }*/
   /*#ifdef FLIP_DISPLAY
     display.flipScreenVertically();
   #endif
@@ -1171,12 +1179,11 @@ void initPacketMon() {
   display.print("Packet Monitor");
   // display.setFont(FreeMonoBold9pt7b);
   display.setCursor(24, 34);
-  display.print("Made with <3 by");
+  display.print("Scans for wifi packets");
   display.setCursor(29, 44);
   display.print("@Spacehuhn");
   display.display();
   nonBlockingDelay(1000);
-#endif
   // second core
   xTaskCreatePinnedToCore(
     coreTask,      /* Function to implement the task */
@@ -2263,6 +2270,16 @@ void turnOffNeopixel() {
   strip.show();               // Update the NeoPixel strip
 }
 
+/**
+ * @brief Check if a button is pressed.
+ *
+ * This function reads the specified pin to determine if a button is pressed.
+ * It uses a debounce delay to prevent false positives from button bouncing.
+ * If the button is confirmed as pressed, the LED is turned on.
+ *
+ * @param pin The pin number to read the button state from.
+ * @return true if the button is pressed, false otherwise.
+ */
 bool isButtonPressed(uint8_t pin) {
   if (digitalRead(pin) == LOW) {
     nonBlockingDelay(100);  // Debounce nonBlockingDelay
@@ -2274,6 +2291,12 @@ bool isButtonPressed(uint8_t pin) {
   return false;
 }
 
+/**
+ * Handle button presses to navigate the menu and select items.
+ * When a button is pressed, this function will change the selected menu item and redraw the menu.
+ * When a button is released, this function will reset the buttonPressed flag, allowing the LED to turn off.
+ * @return void
+ */
 void handleMenuSelection() {
   static bool buttonPressed = false;
   if (!buttonPressed) {
@@ -2321,6 +2344,12 @@ void handleMenuSelection() {
   }
 }
 // Menu Functions
+
+/**
+ * Execute the selected menu item.
+ * @param selectedMenuItem The index of the selected menu item
+ * @return void
+ */
 void executeSelectedMenuItem() {
   switch (selectedMenuItem) {
 
@@ -2485,6 +2514,25 @@ void displayInfoScreen() {
 
   display.display();
 }
+/**
+ * @brief Arduino setup function
+ *
+ * Initialize the following:
+ * - Serial at 115200 baud
+ * - Delay for 10ms
+ * - Initialize display
+ * - Set up input pins for buttons
+ * - Set up output pin for LED
+ * - Initialize U8g2_for_Adafruit_GFX
+ * - Display title screen
+ * - Display info screen
+ * - Initialize RFID
+ * - Initialize GPS
+ * - Initialize SD card
+ * - Initialize Neopixel strip
+ * - Set font to small font
+ * - Draw menu
+ */
 void setup() {
   Serial.begin(115200);
   nonBlockingDelay(10);
@@ -2518,6 +2566,14 @@ void setup() {
   drawMenu();
 }
 
+/**
+ * Main loop function that continuously checks for serial input commands and handles various device states.
+ * - Processes incoming serial commands and updates state accordingly.
+ * - Handles menu selection and navigation through button presses.
+ * - Manages transitions between different operational states of the device.
+ * - Includes cleanup operations for certain states when transitioning back to the main menu.
+ * - Supports handling client requests if a server is running.
+ */
 void loop() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
