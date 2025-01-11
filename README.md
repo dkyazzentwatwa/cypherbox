@@ -28,7 +28,7 @@ More updates will be added soon!
 
 | Component                     | Description                                      |
 |-------------------------------|--------------------------------------------------|
-| **ESP32-WROOM-32E **       | Microcontroller with Wi-Fi and Bluetooth support |
+| **ESP32-WROOM-32E**       | Microcontroller with Wi-Fi and Bluetooth support |
 | **SSD1306 128x64 OLED Display** | .96-inch screen for displaying information      |
 | **SD Card Module**            | Module for reading and writing SD cards         |
 | **MFRC522 RFID Module**     | Module for RFID reading and writing         |
