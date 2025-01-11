@@ -40,11 +40,14 @@ More updates will be added soon!
 | **3V Power Supply**              | Suitable power source for the ESP32             |
 
 ## Parts used to make this device:
-- **ESP32-C3 Super Mini**:
-https://amzn.to/3XtgL9G
+- **ESP32-WROOM-32D**:
+https://amzn.to/4j3QTLo
 
-- **PN532 NFC/RFID Module**:
-https://amzn.to/3XqYQjN
+- **MFRC522 RFID Module**:
+https://amzn.to/4gP9FEX
+
+-**GPS Module**:
+https://amzn.to/4j7HTF3
 
 - **SSD1306 128x64 Screen**:
 https://amzn.to/3TqELJe
@@ -54,6 +57,8 @@ https://amzn.to/3zsvJot
 
 - **Tactile Buttons**:
 https://amzn.to/4gripRD
+- **Neopixel WS2812 LED**:
+
 
 ## Wiring
 
