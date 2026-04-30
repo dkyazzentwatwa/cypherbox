@@ -11,18 +11,58 @@
 - **Home**: Pin 2 (**WHEN UPLOADING CODE YOU MUST HOLD DOWN THIS BUTTON TO ENTER BOOT MODE**)
 
 ## Current Features
-- **GPS Wardriver**: Collect GPS/satellite data, wifi networks, and compiles it into a clean .csv format!
-- **RFID/NFC Functionality**: Read/write(soon)/clone(soon) data using the MFRC522 module.
-- **SD Card Operations**: Seamlessly read, load, and delete(soon) files on the SD card. Working on saving wardriver/RFID data to sd card.
-- **User Interface**: Navigate options with three buttons, neopixel, & OLED screen.
+- **RFID/NFC Lab Tools**: Identify MFRC522 tags, show UID/type/SAK/ATQA, read MIFARE blocks with the default lab key, dump readable blocks to SD, and restore saved dumps to blank/writable test cards while skipping block 0 and trailer blocks.
+- **Packet Monitor**: Passive WiFi packet/channel monitor with RSSI, management/data/control counts, channel switching, and optional PCAP recording to SD.
+- **WiFi Tools**: Network scanner, channel heatmap, AP create/stop, WiFi join by serial command, captive portal dashboard, and web status views.
+- **BLE/Bluetooth Tools**: BLE scanner, Bluetooth Serial command bridge, and a safe BT HID test mode that sends harmless text only.
+- **GPS Wardriver**: Collect GPS/satellite data and WiFi networks into a CSV log on SD.
+- **SD Card Operations**: List, preview, and confirmed-delete files; RFID dumps and packet captures save to SD.
+- **User Interface**: Three-button OLED menu, serial CLI, NeoPixel controls, and stop-all cleanup.
 
-## Future Features
-- **Improve menu flow and button handling***: Currently you have to reset when inside packet monitor, and in some other menus. Returning to menu isnt working will all menu items.
-- **Save scans to SD card** : After reading RFID/NFC/ or using GPS, save data to SD Card
-- **Write from SD card** : Enter write menu, select SD Card, & choose which data to write. 
+Attack/deauth/devil-twin style modes are intentionally disabled in this V2 build. The project is focused on non-attack scanning, lab RFID work, diagnostics, and local device utilities.
 
+## Build
 
-More updates will be added soon!
+```bash
+arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app
+```
+
+The modular V2 firmware needs the `huge_app` partition scheme.
+
+## Serial Commands
+
+```bash
+help
+menu
+status
+stop
+wifi_scan
+wifi_heatmap
+wifi_join <ssid> <password>
+packet_mon
+wifi_sniff
+packet_record on|off
+channel <1-13>
+rfid
+read_blocks
+rfid_dump
+rfid_list
+rfid_write <dump>
+sd_list
+sd_read <file>
+sd_delete <file> confirm
+ble_scan
+bt_create
+bt_serial
+bt_hid
+web_on
+web_off
+web_status
+wardriver
+files
+read_files
+stop_all
+```
 
 ## Parts List
 
@@ -105,6 +145,5 @@ The code is under active development, with regular updates planned to enhance fu
 <img src="img/cypherbox5.JPG" alt="ESP32 Cybersecurity Device" width="300" height="400">
 <img src="img/cypherbox6.JPG" alt="ESP32 Cybersecurity Device" width="300" height="400">
 <img src="img/cypherbox7.JPG" alt="ESP32 Cybersecurity Device" width="300" height="400">
-
 
 
