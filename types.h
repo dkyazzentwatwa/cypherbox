@@ -49,7 +49,9 @@ enum AppState {
   STATE_STOP_ALL,
   STATE_GET_RSSI,
   STATE_SETTINGS,
-  STATE_HELP
+  STATE_HELP,
+  // Captive Portal
+  STATE_CAPTIVE_PORTAL
 };
 
 // ============================================================================
@@ -100,6 +102,10 @@ enum MenuItem {
   STOP_ALL,
   SETTINGS,
   HELP,
+  // Captive Portal
+  CAPTIVE_PORTAL,
+  CAPTIVE_PORTAL_OFF,
+  CAPTIVE_PORTAL_STATUS,
   NUM_MENU_ITEMS
 };
 

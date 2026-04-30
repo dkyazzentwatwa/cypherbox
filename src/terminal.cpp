@@ -4,6 +4,7 @@
 #include "display.h"
 #include "wifi_scanner.h"
 #include "ble_scanner.h"
+#include "captive_portal.h"
 
 char Terminal::lineBuffer[BUF_LENGTH];
 uint8_t Terminal::bufferIndex = 0;
@@ -44,6 +45,16 @@ static const CommandMapping commands[] = {
     {"web_on", WEBSERVER_ON, "Start Web Server"},
     {"web_off", WEBSERVER_OFF, "Stop Web Server"},
     {"web_status", WEBSERVER_STATUS, "Web Server Status"},
+    // Security Testing
+    {"deauth_target", SEC_DEAUTH_TARGET, "Deauth targeted network"},
+    {"deauth_all",    SEC_DEAUTH_ALL,    "Deauth broadcast"},
+    {"beacon_flood",  SEC_BEACON_FLOOD,  "Beacon frame flood"},
+    {"probe_flood",   SEC_PROBE_FLOOD,   "Probe request flood"},
+    {"pmkid_capture", SEC_PMKID_CAPTURE, "PMKID capture"},
+    // Captive Portal
+    {"captive_portal",  CAPTIVE_PORTAL,        "Start captive portal"},
+    {"captive_off",     CAPTIVE_PORTAL_OFF,    "Stop captive portal"},
+    {"captive_status",  CAPTIVE_PORTAL_STATUS, "Captive portal status"},
     // Recording & Utility
     {"rec_raw", REC_RAW, "Record Raw Signal"},
     {"play_raw", PLAY_RAW, "Replay Raw Signal"},
@@ -175,6 +186,27 @@ void Terminal::parseCommand(const String& cmd) {
         commandFromSerial = true;
         return;
     }
+    if (name == "captive_template") {
+        int n = getArg(1).toInt();
+        if (n >= 0 && n < CaptivePortal::getTemplateCount()) {
+            CaptivePortal::setTemplate(n);
+            Serial.printf("Captive template set to %d: %s\n", n, CaptivePortal::getTemplateName(n));
+        } else {
+            Serial.printf("Valid range: 0-%d\n", CaptivePortal::getTemplateCount() - 1);
+            for (int i = 0; i < CaptivePortal::getTemplateCount(); i++) {
+                Serial.printf("  %d: %s\n", i, CaptivePortal::getTemplateName(i));
+            }
+        }
+        return;
+    }
+    if (name == "captive_captures") {
+        CaptivePortal::printCapturesToSerial();
+        return;
+    }
+    if (name == "captive_clear") {
+        CaptivePortal::clearCaptures();
+        return;
+    }
 
     MenuItem item = commandToMenuItem(trimmedCmd);
     if (item != (MenuItem)-1) {
@@ -209,6 +241,9 @@ void Terminal::printHelp() {
     Serial.println("  rfid_dump | rfid_list | rfid_write <dump>");
     Serial.println("  sd_list | sd_read <file> | sd_delete <file> confirm");
     Serial.println("  packet_record on|off | channel <1-13>");
+    Serial.println("  captive_template <0-9>  - set portal template");
+    Serial.println("  captive_captures        - print captured data");
+    Serial.println("  captive_clear           - clear captures");
     Serial.println("");
     Serial.println("=== Feature Commands ===");
     for (int i = 0; i < numCommands; i++) {

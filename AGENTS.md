@@ -88,6 +88,7 @@ ble_list      # List scanned BLE devices
 Feature commands: `wifi_scan`, `ble_scan`, `wifi_heatmap`, `packet_mon`, `wifi_sniff`, `web_on`, `web_off`, `rfid`, `read_blocks`, `rfid_dump`, `rfid_list`, `rfid_write <dump>`, `sd_list`, `sd_read <file>`, `sd_delete <file> confirm`, `wardriver`, `bt_serial`, `bt_hid`, etc.
 
 Attack/deauth/devil-twin style modes are intentionally disabled in this V2 build.
+The old WiFi attack module is archived under `archive/disabled_modules/` with `.disabled` file suffixes and must not be compiled back into the default build.
 
 ## Web Server
 

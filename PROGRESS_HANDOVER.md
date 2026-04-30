@@ -58,6 +58,8 @@ Resolved in this pickup:
 
 5. **Partition size** — Default `esp32:esp32:esp32` app partition is too small. Use `PartitionScheme=huge_app`.
 
+6. **Attack archive** — The old WiFi attack module is preserved under `archive/disabled_modules/wifi_attack.*.disabled` for project history. It is outside `src/` and has a `.disabled` suffix so Arduino does not compile it.
+
 ---
 
 ## How to Fix and Complete

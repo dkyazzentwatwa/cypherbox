@@ -38,11 +38,11 @@ const char* Display::menuLabels[NUM_MENU_ITEMS] = {
     "Web Server OFF",
     "Web Status",
     // Security Testing
-    "Lab Mode Off",
-    "Lab Mode Off",
-    "Lab Mode Off",
-    "Lab Mode Off",
-    "Lab Mode Off",
+    "Deauth Target",
+    "Deauth Broadcast",
+    "Beacon Flood",
+    "Probe Flood",
+    "PMKID Capture",
     // Recording & Utility
     "Rec Raw",
     "Play Raw",
@@ -52,7 +52,11 @@ const char* Display::menuLabels[NUM_MENU_ITEMS] = {
     "Flush Buffer",
     "Stop All",
     "Settings",
-    "Help"
+    "Help",
+    // Captive Portal
+    "Captive Portal",
+    "Stop C-Portal",
+    "C-Portal Status"
 };
 
 void Display::init() {
