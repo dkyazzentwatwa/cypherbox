@@ -40,6 +40,7 @@
 #include "src/bluetooth_tools.h"
 #include "src/wifi_attack.h"
 #include "src/captive_portal.h"
+#include "src/wardriver.h"
 
 // ============================================================================
 // Global State Variables
@@ -286,7 +287,7 @@ void executeSelectedMenuItem() {
 
         case WARDRIVER:
             currentState = STATE_WARDRIVER;
-            runWardriver();
+            Wardriver::run();
             break;
 
         case RFID:
