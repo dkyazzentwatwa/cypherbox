@@ -52,15 +52,15 @@ void Input::handleMenuSelection(MenuItem& selectedMenuItem, int& firstVisibleMen
     static unsigned long lastNavTime = 0;
     if (millis() - lastNavTime < 150) return;
 
+    bool moved = false;
+
     if (isButtonPressed(BUTTON_UP)) {
         if (selectedMenuItem > 0) {
             selectedMenuItem = (MenuItem)(selectedMenuItem - 1);
         } else {
             selectedMenuItem = (MenuItem)(NUM_MENU_ITEMS - 1);
         }
-        if (selectedMenuItem < firstVisibleMenuItem) {
-            firstVisibleMenuItem = selectedMenuItem;
-        }
+        moved = true;
         lastNavTime = millis();
     }
 
@@ -69,10 +69,19 @@ void Input::handleMenuSelection(MenuItem& selectedMenuItem, int& firstVisibleMen
         if (selectedMenuItem >= NUM_MENU_ITEMS) {
             selectedMenuItem = (MenuItem)0;
         }
-        if (selectedMenuItem > firstVisibleMenuItem + 1) {
-            firstVisibleMenuItem = selectedMenuItem - 1;
-        }
+        moved = true;
         lastNavTime = millis();
+    }
+
+    if (moved) {
+        int selected = (int)selectedMenuItem;
+        int maxFirstVisible = max(0, (int)NUM_MENU_ITEMS - 2);
+        if (selected < firstVisibleMenuItem) {
+            firstVisibleMenuItem = selected;
+        } else if (selected > firstVisibleMenuItem + 1) {
+            firstVisibleMenuItem = selected - 1;
+        }
+        firstVisibleMenuItem = constrain(firstVisibleMenuItem, 0, maxFirstVisible);
     }
 
     if (isButtonPressed(BUTTON_SELECT)) {

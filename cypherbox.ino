@@ -75,6 +75,22 @@ void nonBlockingDelay(unsigned long ms) {
     }
 }
 
+void waitForSelectRelease(unsigned long timeoutMs = 1000) {
+    unsigned long start = millis();
+    while (Input::isButtonPressed(BUTTON_SELECT) && millis() - start < timeoutMs) {
+        delay(10);
+        yield();
+    }
+}
+
+void flashMenuEnterLed() {
+    pixels.setPixelColor(0, pixels.Color(0, 60, 180));
+    pixels.show();
+    delay(80);
+    pixels.setPixelColor(0, 0);
+    pixels.show();
+}
+
 // ============================================================================
 // Cypherbox Original Feature Implementations
 // ============================================================================
@@ -175,6 +191,7 @@ void runWardriver() {
 
 void runPartyLight() {
     pixels.begin();
+    waitForSelectRelease();
     pixels.setPixelColor(0, pixels.Color(0, 150, 0));
     pixels.show();
     Serial.println("Party light on");
@@ -213,6 +230,7 @@ void runLightOff() {
 void executeSelectedMenuItem() {
     Serial.printf("Executing: %d\n", selectedMenuItem);
     String serialCommand = Terminal::isCommandFromSerial() ? Terminal::getCommandName() : "";
+    flashMenuEnterLed();
 
     switch (selectedMenuItem) {
         // === Cypherbox Original ===

@@ -75,6 +75,15 @@ void Display::drawMenu(MenuItem selectedMenuItem, int firstVisibleMenuItem) {
     oled.setTextColor(SSD1306_WHITE);
     u8g2.setFont(u8g2_font_baby_tf);
 
+    int selected = constrain((int)selectedMenuItem, 0, (int)NUM_MENU_ITEMS - 1);
+    int maxFirstVisible = max(0, (int)NUM_MENU_ITEMS - 2);
+    if (selected < firstVisibleMenuItem) {
+        firstVisibleMenuItem = selected;
+    } else if (selected > firstVisibleMenuItem + 1) {
+        firstVisibleMenuItem = selected - 1;
+    }
+    firstVisibleMenuItem = constrain(firstVisibleMenuItem, 0, maxFirstVisible);
+
     // Title bar
     oled.fillRect(0, 0, SCREEN_WIDTH, 16, SSD1306_WHITE);
     oled.setTextColor(SSD1306_BLACK);
@@ -85,11 +94,11 @@ void Display::drawMenu(MenuItem selectedMenuItem, int firstVisibleMenuItem) {
     // Menu items (2 at a time)
     oled.setTextColor(SSD1306_WHITE);
     for (int i = 0; i < 2; i++) {
-        int menuIndex = (firstVisibleMenuItem + i) % NUM_MENU_ITEMS;
+        int menuIndex = firstVisibleMenuItem + i;
         int16_t x = 5;
         int16_t y = 20 + (i * 20);
 
-        if (selectedMenuItem == menuIndex) {
+        if (selected == menuIndex) {
             oled.fillRect(0, y - 2, SCREEN_WIDTH, 15, SSD1306_WHITE);
             oled.setTextColor(SSD1306_BLACK);
         } else {
@@ -106,7 +115,7 @@ void Display::drawMenu(MenuItem selectedMenuItem, int firstVisibleMenuItem) {
     // Echo to serial
     Terminal::echoToSerial(
         "MENU",
-        String(selectedMenuItem > 0 ? "> " : "") + menuLabels[selectedMenuItem],
+        "> " + String(menuLabels[selected]),
         "[UP/DOWN/SELECT]",
         ""
     );
