@@ -6,8 +6,7 @@
 #include <Arduino.h>
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
-#include <BLEDevice.h>
-#include <BLEScan.h>
+#include <NimBLEDevice.h>
 #include <WiFi.h>
 #include <SD.h>
 #include "../config.h"
@@ -73,7 +72,7 @@ private:
 
     static TinyGPSPlus gps;
     static HardwareSerial gpsSerial;
-    static BLEScan* bleScan;
+    static NimBLEScan* bleScan;
     static WardriverStats stats;
     static char knownWifi[MAX_UNIQUE_WIFI][18];
     static char knownBle[MAX_UNIQUE_BLE][18];
@@ -116,7 +115,7 @@ private:
     static void scanWifi(const WardriverFix& fix);
     static void scanBle(const WardriverFix& fix);
     static bool writeWifiRow(File& file, int index, const WardriverFix& fix);
-    static bool writeBleRow(File& file, BLEAdvertisedDevice& device, const WardriverFix& fix);
+    static bool writeBleRow(File& file, const NimBLEAdvertisedDevice* device, const WardriverFix& fix);
     static void maybeWriteSummary(const WardriverFix& fix);
     static bool writeSummary(const WardriverFix& fix);
     static void render(const WardriverFix& fix);

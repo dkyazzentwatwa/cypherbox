@@ -7,7 +7,7 @@
 
 TinyGPSPlus Wardriver::gps;
 HardwareSerial Wardriver::gpsSerial(1);
-BLEScan* Wardriver::bleScan = nullptr;
+NimBLEScan* Wardriver::bleScan = nullptr;
 WardriverStats Wardriver::stats;
 char Wardriver::knownWifi[Wardriver::MAX_UNIQUE_WIFI][18];
 char Wardriver::knownBle[Wardriver::MAX_UNIQUE_BLE][18];
@@ -84,8 +84,8 @@ bool Wardriver::begin() {
     WiFi.disconnect(true);
     delay(100);
 
-    BLEDevice::init("CypherboxWardriver");
-    bleScan = BLEDevice::getScan();
+    NimBLEDevice::init("CypherboxWardriver");
+    bleScan = NimBLEDevice::getScan();
     if (bleScan) {
         bleScan->setActiveScan(false);
         bleScan->setInterval(160);
@@ -104,8 +104,9 @@ void Wardriver::end() {
     WiFi.mode(WIFI_OFF);
     if (bleScan) {
         bleScan->clearResults();
+        bleScan->stop();
     }
-    BLEDevice::deinit();
+    // Don't deinit the NimBLE stack: BT-HID needs it to keep advertising.
     bleScan = nullptr;
 }
 
@@ -377,14 +378,9 @@ void Wardriver::scanWifi(const WardriverFix& fix) {
 void Wardriver::scanBle(const WardriverFix& fix) {
     if (!bleScan) return;
 
-    BLEScanResults* results = bleScan->start(BLE_SCAN_DURATION, false);
-    if (!results) {
-        stats.sdErrors++;
-        setError("BLE scan failed");
-        return;
-    }
-
-    int count = min(results->getCount(), MAX_BLE_DEVICES);
+    NimBLEScanResults results = bleScan->getResults(BLE_SCAN_DURATION * 1000, false);
+    int count = (int)results.getCount();
+    if (count > MAX_BLE_DEVICES) count = MAX_BLE_DEVICES;
     stats.bleSeen += count;
     File file = SD.open(stats.activeLog, FILE_APPEND);
     if (!file) {
@@ -395,7 +391,8 @@ void Wardriver::scanBle(const WardriverFix& fix) {
     }
 
     for (int i = 0; i < count; i++) {
-        BLEAdvertisedDevice device = results->getDevice(i);
+        const NimBLEAdvertisedDevice* device = results.getDevice(i);
+        if (!device) continue;
         if (!writeBleRow(file, device, fix)) {
             stats.sdErrors++;
             setError("BLE row failed");
@@ -446,10 +443,10 @@ bool Wardriver::writeWifiRow(File& file, int index, const WardriverFix& fix) {
     return file.getWriteError() == 0;
 }
 
-bool Wardriver::writeBleRow(File& file, BLEAdvertisedDevice& device, const WardriverFix& fix) {
-    String address = device.getAddress().toString().c_str();
-    String name = device.haveName() ? String(device.getName().c_str()) : String("<no name>");
-    int32_t rssi = device.getRSSI();
+bool Wardriver::writeBleRow(File& file, const NimBLEAdvertisedDevice* device, const WardriverFix& fix) {
+    String address = device->getAddress().toString().c_str();
+    String name = device->getName().empty() ? String("<no name>") : String(device->getName().c_str());
+    int32_t rssi = device->getRSSI();
 
     if (noteUnique(knownBle, knownBleCount, MAX_UNIQUE_BLE, address.c_str())) {
         stats.uniqueBle++;
@@ -458,7 +455,7 @@ bool Wardriver::writeBleRow(File& file, BLEAdvertisedDevice& device, const Wardr
 
     file.print(csvEscape(address)); file.print(',');
     file.print(csvEscape(name)); file.print(',');
-    file.print(csvEscape(device.isConnectable() ? "BLE_CONNECTABLE" : "BLE_ADVERTISING")); file.print(',');
+    file.print(csvEscape(device->isConnectable() ? "BLE_CONNECTABLE" : "BLE_ADVERTISING")); file.print(',');
     file.print(csvEscape(fix.timestamp)); file.print(',');
     file.print('0'); file.print(',');
     file.print(',');

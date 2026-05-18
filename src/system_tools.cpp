@@ -4,7 +4,6 @@
 #include "display.h"
 #include "input.h"
 #include "packet_monitor.h"
-#include "bluetooth_tools.h"
 #include "ble_scanner.h"
 #include "cypherbox_webserver.h"
 #include <WiFi.h>
@@ -182,7 +181,6 @@ void SystemTools::disconnectWiFi() {
 void SystemTools::stopAll() {
     PacketMonitor::stop();
     if (StarbeamWebServer::isRunning()) StarbeamWebServer::stop();
-    BluetoothTools::stop();
     BLEScanner::deinit();
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true);

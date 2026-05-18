@@ -1,4 +1,6 @@
-// ble_scanner.cpp - BLE Scanner Module Implementation for Cypherbox V2
+// ble_scanner.cpp - BLE Scanner Module Implementation for Cypherbox V2.
+// Ported from stock Bluedroid <BLEDevice.h> to NimBLE-Arduino so the
+// firmware can also link the BT-HID keyboard (which uses NimBLE).
 
 #include "ble_scanner.h"
 #include "display.h"
@@ -13,40 +15,48 @@ int BLEScanner::currentDeviceIndex = 0;
 bool BLEScanner::detailMode = false;
 int BLEScanner::detailScrollOffset = 0;
 unsigned long BLEScanner::lastScanTime = 0;
-BLEScan* BLEScanner::pBLEScan = nullptr;
+NimBLEScan* BLEScanner::pBLEScan = nullptr;
 
-class MyBLECallback : public BLEAdvertisedDeviceCallbacks {
-    void onResult(BLEAdvertisedDevice advertisedDevice) {
+namespace {
+
+// NimBLE callback API: onResult takes a const NimBLEAdvertisedDevice*
+// (whose lifetime is tied to the scan results), so we copy out the
+// relevant fields immediately.
+class CypherScanCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice* dev) override {
+        if (!dev) return;
         if (BLEScanner::deviceCount >= MAX_BLE_DEVICES) return;
         BLEDeviceInfo info = {};
         info.payload = nullptr;
-        
-        String name = advertisedDevice.getName().c_str();
+
+        std::string name = dev->getName();
         strncpy(info.name, name.c_str(), sizeof(info.name) - 1);
-        String addr = advertisedDevice.getAddress().toString().c_str();
+        std::string addr = dev->getAddress().toString();
         strncpy(info.address, addr.c_str(), sizeof(info.address) - 1);
-        info.rssi = advertisedDevice.getRSSI();
-        info.connectable = advertisedDevice.isConnectable();
-        
+        info.rssi = dev->getRSSI();
+        info.connectable = dev->isConnectable();
+
         BLEScanner::devices[BLEScanner::deviceCount++] = info;
     }
 };
 
-static MyBLECallback bleCallback;
+CypherScanCallbacks bleCallback;
+
+}  // namespace
 
 void BLEScanner::init() {
-    BLEDevice::init("Cypherbox");
-    pBLEScan = BLEDevice::getScan();
+    NimBLEDevice::init("Cypherbox");
+    pBLEScan = NimBLEDevice::getScan();
     pBLEScan->setActiveScan(true);
     pBLEScan->setInterval(100);
     pBLEScan->setWindow(99);
-    pBLEScan->setAdvertisedDeviceCallbacks(&bleCallback);
+    pBLEScan->setScanCallbacks(&bleCallback, false);
     deviceCount = 0;
     currentDeviceIndex = 0;
     detailMode = false;
     detailScrollOffset = 0;
     lastScanTime = 0;
-    Serial.println("BLE Scanner initialized");
+    Serial.println("BLE Scanner initialized (NimBLE)");
 }
 
 void BLEScanner::deinit() {
@@ -56,7 +66,9 @@ void BLEScanner::deinit() {
             devices[i].payload = nullptr;
         }
     }
-    BLEDevice::deinit();
+    // NB: do NOT call NimBLEDevice::deinit() here — the BT-HID keyboard
+    // shares the stack and must keep advertising after the scanner exits.
+    if (pBLEScan) pBLEScan->stop();
     pBLEScan = nullptr;
     deviceCount = 0;
 }
@@ -69,18 +81,24 @@ const BLEDeviceInfo* BLEScanner::getDevice(int index) {
 void BLEScanner::performScan() {
     if (!pBLEScan) return;
     deviceCount = 0;
-    BLEScanResults* results = pBLEScan->start(BLE_SCAN_DURATION);
-    deviceCount = min(results->getCount(), MAX_BLE_DEVICES);
-    for (int i = 0; i < deviceCount; i++) {
-        BLEAdvertisedDevice dev = results->getDevice(i);
+    // NimBLE 2.x: getResults takes scan duration in MILLISECONDS.
+    NimBLEScanResults results = pBLEScan->getResults(BLE_SCAN_DURATION * 1000, false);
+    int n = (int)results.getCount();
+    if (n > MAX_BLE_DEVICES) n = MAX_BLE_DEVICES;
+    deviceCount = n;
+    for (int i = 0; i < n; i++) {
+        const NimBLEAdvertisedDevice* dev = results.getDevice(i);
+        if (!dev) continue;
+        devices[i] = {};
         devices[i].payload = nullptr;
-        String name = dev.getName().c_str();
+        std::string name = dev->getName();
         strncpy(devices[i].name, name.c_str(), sizeof(devices[i].name) - 1);
-        String addr = dev.getAddress().toString().c_str();
+        std::string addr = dev->getAddress().toString();
         strncpy(devices[i].address, addr.c_str(), sizeof(devices[i].address) - 1);
-        devices[i].rssi = dev.getRSSI();
-        devices[i].connectable = dev.isConnectable();
+        devices[i].rssi = dev->getRSSI();
+        devices[i].connectable = dev->isConnectable();
     }
+    pBLEScan->clearResults();
     lastScanTime = millis();
     Serial.printf("BLE Scan: Found %d devices\n", deviceCount);
 }
@@ -124,8 +142,7 @@ void BLEScanner::runScanner() {
             }
             detailMode = true;
             detailScrollOffset = 0;
-            if (detailMode) displayDetailMode();
-            else displayListMode();
+            displayDetailMode();
             delay(200);
         }
     }

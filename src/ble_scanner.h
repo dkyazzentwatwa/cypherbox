@@ -1,11 +1,13 @@
-// ble_scanner.h - BLE Scanner Module for Cypherbox V2
+// ble_scanner.h - BLE Scanner Module for Cypherbox V2 (NimBLE backend).
+//
+// We use NimBLE-Arduino so the scanner shares a stack with the BLE-HID
+// keyboard in src/bt_hid/. NimBLEDevice cannot coexist with the stock
+// Bluedroid <BLEDevice.h> in the same firmware.
 
 #ifndef BLE_SCANNER_H
 #define BLE_SCANNER_H
 
-#include <BLEDevice.h>
-#include <BLEScan.h>
-#include <BLEAdvertisedDevice.h>
+#include <NimBLEDevice.h>
 #include "../config.h"
 
 // BLE Device Info structure
@@ -41,7 +43,7 @@ private:
     static bool detailMode;
     static int detailScrollOffset;
     static unsigned long lastScanTime;
-    static BLEScan* pBLEScan;
+    static NimBLEScan* pBLEScan;
 };
 
 #endif

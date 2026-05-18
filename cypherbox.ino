@@ -37,7 +37,7 @@
 #include "src/rfid_tools.h"
 #include "src/packet_monitor.h"
 #include "src/system_tools.h"
-#include "src/bluetooth_tools.h"
+#include "src/bt_hid/bt_hid.h"
 #include "src/wifi_attack.h"
 #include "src/captive_portal.h"
 #include "src/wardriver.h"
@@ -283,19 +283,9 @@ void executeSelectedMenuItem() {
             BLEScanner::deinit();
             break;
 
-        case BT_CREATE:
-            currentState = STATE_BT_SERIAL;
-            BluetoothTools::startSerial();
-            break;
-
-        case BT_SERIAL_CMD:
-            currentState = STATE_BT_SERIAL;
-            BluetoothTools::runSerialBridge();
-            break;
-
         case BT_HID:
             currentState = STATE_BT_HID;
-            BluetoothTools::runHidSafeTest();
+            BtHid::runPayloadMenu();
             break;
 
         case DEVIL_TWIN:
@@ -753,6 +743,11 @@ void setup() {
     // Initialize web server (don't start AP yet)
     StarbeamWebServer::init();
     RfidTools::init();
+
+    // Bring up BLE-HID + its Wi-Fi payload editor so the board is pairable
+    // and the web UI is reachable from boot. Brings in NimBLE; do not also
+    // init the Bluedroid stack anywhere else.
+    BtHid::init();
 
     // Display title screen
     Display::displayTitleScreen();
